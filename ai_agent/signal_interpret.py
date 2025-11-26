@@ -1,9 +1,13 @@
 # ai_agent/signal_interpret.py
 import json
+import logging
 from .llm_client import ask_llm
 from .llm_prompt import MARKET_STRUCTURE_PROMPT
 
-def interpret_with_llm(feature_packet, provider='openai', model='gpt-4o-mini', use_llm=True):
+logger = logging.getLogger(__name__)
+
+def interpret_with_llm(feature_packet, provider='openai', model='gpt-4o-mini', 
+                       use_llm=True, temperature=0.0, max_tokens=400):
     """
     把结构化特征传给 LLM，解析返回的 JSON。
     若无法调用 LLM 或解析失败，返回简单启发式聚合。
@@ -26,7 +30,11 @@ def interpret_with_llm(feature_packet, provider='openai', model='gpt-4o-mini', u
                 'explanation':', '.join(reasons), 'risk':'fallback heuristic'}
 
     prompt = MARKET_STRUCTURE_PROMPT + "\n\n特征数据：\n" + json.dumps(feature_packet, ensure_ascii=False)
-    txt = ask_llm(prompt, provider=provider, model=model)
+    try:
+        txt = ask_llm(prompt, provider=provider, model=model)
+    except Exception as e:
+        logger.warning(f"LLM call failed: {e}, using fallback")
+        return interpret_with_llm(feature_packet, provider=provider, model=model, use_llm=False)
     # 尝试把 LLM 返回解析为 JSON
     try:
         parsed = json.loads(txt.strip())

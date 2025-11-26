@@ -1,0 +1,54 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+venv/
+env/
+ENV/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Project specific
+.env
+*.log
+*.csv
+*.json
+*.png
+*.txt
+!requirements.txt
+!README.md
+!.env.example
+
+# Output files
+sample_data.csv
+trades.csv
+signals_log.json
+trading_chart.png
+backtest_results.png
+analysis_report.txt
+trading.log

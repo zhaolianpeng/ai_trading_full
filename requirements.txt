@@ -3,3 +3,5 @@ numpy
 openai
 python-dotenv
 matplotlib
+yfinance
+ccxt

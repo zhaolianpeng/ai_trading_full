@@ -25,8 +25,18 @@ def add_basic_ta(df):
     df['ema21'] = ema(df['close'], 21)
     df['ema55'] = ema(df['close'], 55)
     df['ema100'] = ema(df['close'], 100)
+    df['ema200'] = ema(df['close'], 200)
     df['rsi14'] = rsi(df['close'], 14)
     df['atr14'] = atr(df, 14)
     df['vol_ma50'] = df['volume'].rolling(50, min_periods=1).mean()
     df['res50'] = df['close'].rolling(50).max()
+    return df
+
+def add_vegas_ema(df):
+    """
+    添加维加斯通道 EMA（144/169）
+    """
+    df = df.copy()
+    df['ema144'] = ema(df['close'], 144)
+    df['ema169'] = ema(df['close'], 169)
     return df
