@@ -4,6 +4,7 @@ from features.ta_advanced import add_advanced_ta
 from features.divergence import detect_rsi_divergence
 import numpy as np
 import pandas as pd
+import os
 from utils.logger import logger
 
 def detect_rules(df, use_advanced_ta=True, use_eric_indicators=False):
@@ -45,8 +46,9 @@ def detect_rules(df, use_advanced_ta=True, use_eric_indicators=False):
         close_40mean = df['close'].rolling(40, min_periods=40).mean()
         price_condition = (df['close'] == close_20max) & (close_20min > close_40mean.shift(1))
         
-        # 成交量条件
-        volume_condition = df['volume'] > (df['vol_ma50'] * 1.2)  # 降低阈值从1.3到1.2
+        # 成交量条件（根据交易模式调整阈值）
+        volume_threshold = float(os.getenv('VOLUME_THRESHOLD', '1.2'))
+        volume_condition = df['volume'] > (df['vol_ma50'] * volume_threshold)
         
         # 组合条件
         long_structure_mask = ema_condition & price_condition & volume_condition

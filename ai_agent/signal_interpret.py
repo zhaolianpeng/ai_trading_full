@@ -29,7 +29,19 @@ def interpret_with_llm(feature_packet, provider='openai', model='gpt-4o-mini',
                 'confidence':'High' if score>75 else 'Medium' if score>50 else 'Low',
                 'explanation':', '.join(reasons), 'risk':'fallback heuristic'}
 
-    prompt = MARKET_STRUCTURE_PROMPT + "\n\n特征数据：\n" + json.dumps(feature_packet, ensure_ascii=False)
+    # 确保所有值都可以被 JSON 序列化（Python 的 json.dumps 支持布尔值，但需要确保没有其他问题）
+    try:
+        prompt = MARKET_STRUCTURE_PROMPT + "\n\n特征数据：\n" + json.dumps(feature_packet, ensure_ascii=False, default=str)
+    except (TypeError, ValueError) as e:
+        logger.warning(f"JSON serialization failed: {e}, converting values...")
+        # 如果序列化失败，手动转换
+        safe_packet = {}
+        for k, v in feature_packet.items():
+            if isinstance(v, (bool, int, float, str)) or v is None:
+                safe_packet[k] = v
+            else:
+                safe_packet[k] = str(v)
+        prompt = MARKET_STRUCTURE_PROMPT + "\n\n特征数据：\n" + json.dumps(safe_packet, ensure_ascii=False)
     try:
         txt = ask_llm(prompt, provider=provider, model=model)
     except Exception as e:

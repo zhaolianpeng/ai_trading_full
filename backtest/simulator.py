@@ -3,7 +3,8 @@ import pandas as pd
 import numpy as np
 from utils.logger import logger
 
-def simple_backtest(df, enhanced_signals, max_hold=20, atr_mult_stop=1.0, atr_mult_target=2.0, min_llm_score=40):
+def simple_backtest(df, enhanced_signals, max_hold=20, atr_mult_stop=1.0, atr_mult_target=2.0, 
+                    min_llm_score=40, min_risk_reward=1.5, partial_tp_ratio=0.5, partial_tp_mult=1.0):
     """
     简单回测系统
     
@@ -18,49 +19,165 @@ def simple_backtest(df, enhanced_signals, max_hold=20, atr_mult_stop=1.0, atr_mu
     Returns:
         (trades_df, metrics): 交易记录 DataFrame 和回测指标字典
     """
-    logger.info(f"开始回测，共有 {len(enhanced_signals)} 个信号")
+    logger.info(f"开始回测，共有 {len(enhanced_signals)} 个信号（最小盈亏比={min_risk_reward}）")
     trades = []
     used_idxs = set()
+    from utils.json_i18n import get_value_safe
+    
     for item in enhanced_signals:
-        s = item['rule']
-        idx = s['idx']
-        # 默认只跟随 LLM 的 Long 建议
-        llm = item.get('llm', {})
-        signal = llm.get('signal','Neutral') if isinstance(llm, dict) else 'Neutral'
-        # 允许 llm score 是 str（解析），所以做容错
-        raw_score = llm.get('score', 0)
+        s = get_value_safe(item, 'rule', {})
+        idx = get_value_safe(s, 'idx', 0)
+        
+        # 获取 LLM 评分（用于记录）
+        llm = get_value_safe(item, 'llm', {})
+        raw_score = get_value_safe(llm, 'score', 0)
         try:
-            score = int(raw_score)
-        except Exception:
-            try:
-                score = int(float(raw_score))
-            except:
-                score = 0
-        if signal != 'Long' or score < min_llm_score:
-            continue
+            score = int(float(raw_score))
+        except:
+            score = 0
+        
+        # 如果信号已经包含过滤后的信息（quality_score, risk_reward_ratio等），直接使用
+        if 'risk_reward_ratio' in item and 'stop_loss' in item and 'take_profit' in item:
+            # 使用过滤后的止损止盈
+            stop = item['stop_loss']
+            target = item['take_profit']
+            risk_reward_ratio = item['risk_reward_ratio']
+            
+            # 再次检查盈亏比
+            if risk_reward_ratio < min_risk_reward:
+                continue
+            
+            entry_price = df['close'].iloc[idx+1]
+        else:
+            # 传统方式：计算止损止盈并检查盈亏比
+            signal = get_value_safe(llm, 'signal', 'Neutral') if isinstance(llm, dict) else 'Neutral'
+            if signal != 'Long' or score < min_llm_score:
+                continue
+            if idx in used_idxs or idx+1>=len(df):
+                continue
+            
+            entry_price = df['close'].iloc[idx+1]
+            atr = df['atr14'].iloc[idx+1] if not pd.isna(df['atr14'].iloc[idx+1]) else entry_price*0.01
+            
+            # 计算盈亏比
+            stop = entry_price - atr * atr_mult_stop
+            target = entry_price + atr * atr_mult_target
+            risk = abs(entry_price - stop)
+            reward = abs(target - entry_price)
+            
+            if risk <= 0:
+                continue
+            
+            risk_reward_ratio = reward / risk
+            
+            # 盈亏比检查
+            if risk_reward_ratio < min_risk_reward:
+                # 调整止盈以满足最小盈亏比
+                required_reward = risk * min_risk_reward
+                target = entry_price + required_reward
+                risk_reward_ratio = required_reward / risk
+        
         if idx in used_idxs or idx+1>=len(df):
             continue
-        entry_price = df['close'].iloc[idx+1]
-        atr = df['atr14'].iloc[idx+1] if not pd.isna(df['atr14'].iloc[idx+1]) else entry_price*0.01
-        stop = entry_price - atr * atr_mult_stop
-        target = entry_price + atr * atr_mult_target
+        
+        # 计算部分止盈价（如果启用）
+        partial_tp = None
+        if partial_tp_ratio > 0 and partial_tp_mult > 0:
+            atr = df['atr14'].iloc[idx+1] if 'atr14' in df.columns and not pd.isna(df['atr14'].iloc[idx+1]) else entry_price*0.01
+            partial_tp = entry_price + atr * partial_tp_mult
+        
+        # 记录核心数据
+        stop_loss = stop
+        full_take_profit = target
+        partial_take_profit = partial_tp
+        
         entry_idx = idx+1
         exit_idx = None
         exit_price = None
+        partial_exited = False
+        partial_exit_price = None
+        partial_exit_idx = None
+        
+        # 执行交易逻辑（支持部分止盈）
         for j in range(entry_idx, min(len(df), entry_idx+max_hold)):
             low = df['low'].iloc[j]
             high = df['high'].iloc[j]
             close = df['close'].iloc[j]
-            if low <= stop:
-                exit_idx = j; exit_price = stop; break
-            if high >= target:
-                exit_idx = j; exit_price = target; break
+            
+            # 止损检查
+            if low <= stop_loss:
+                exit_idx = j
+                exit_price = stop_loss
+                break
+            
+            # 部分止盈检查（如果启用且尚未部分止盈）
+            if partial_take_profit and not partial_exited and high >= partial_take_profit:
+                partial_exited = True
+                partial_exit_price = partial_take_profit
+                partial_exit_idx = j
+                # 继续持仓剩余部分
+            
+            # 全部止盈检查
+            if high >= full_take_profit:
+                exit_idx = j
+                exit_price = full_take_profit
+                break
+            
+            # 达到最大持仓周期
             if j == min(len(df)-1, entry_idx+max_hold-1):
-                exit_idx = j; exit_price = close
+                exit_idx = j
+                exit_price = close
+                break
+        
         if exit_idx is None:
             continue
-        ret = (exit_price - entry_price) / entry_price
-        trades.append({'entry_idx': entry_idx, 'exit_idx': exit_idx, 'entry_price': entry_price, 'exit_price': exit_price, 'return': ret, 'rule_type': s['type'], 'llm_score': score})
+        
+        # 计算收益率（考虑部分止盈）
+        if partial_exited:
+            # 部分止盈 + 剩余部分平仓
+            partial_return = (partial_exit_price - entry_price) / entry_price * partial_tp_ratio
+            remaining_return = (exit_price - entry_price) / entry_price * (1 - partial_tp_ratio)
+            total_return = partial_return + remaining_return
+        else:
+            # 全部平仓
+            total_return = (exit_price - entry_price) / entry_price
+        
+        rule_type = get_value_safe(s, 'type', 'unknown')
+        
+        # 记录详细交易信息
+        trade_record = {
+            'entry_idx': entry_idx,
+            'exit_idx': exit_idx,
+            'entry_price': entry_price,
+            'exit_price': exit_price,
+            'stop_loss': stop_loss,
+            'full_take_profit': full_take_profit,
+            'partial_take_profit': partial_take_profit if partial_take_profit else None,
+            'partial_exited': partial_exited,
+            'partial_exit_price': partial_exit_price if partial_exited else None,
+            'partial_exit_idx': partial_exit_idx if partial_exited else None,
+            'return': total_return,
+            'rule_type': rule_type,
+            'llm_score': score,
+            'risk_reward_ratio': risk_reward_ratio if 'risk_reward_ratio' in locals() else None
+        }
+        
+        trades.append(trade_record)
+        
+        # 记录每次开单的详细信息到日志
+        logger.info(f"开单 #{len(trades)}: 类型={rule_type}, LLM评分={score}")
+        logger.info(f"  开单价: {entry_price:.4f}")
+        logger.info(f"  止损价: {stop_loss:.4f} (风险: {abs(entry_price - stop_loss):.4f})")
+        if partial_take_profit:
+            logger.info(f"  部分止盈价: {partial_take_profit:.4f} ({partial_tp_ratio*100:.0f}%仓位)")
+        logger.info(f"  全部止盈价: {full_take_profit:.4f} (收益: {abs(full_take_profit - entry_price):.4f})")
+        logger.info(f"  盈亏比: {risk_reward_ratio:.2f}" if 'risk_reward_ratio' in locals() else f"  盈亏比: {abs(full_take_profit - entry_price) / abs(entry_price - stop_loss):.2f}")
+        if partial_exited:
+            logger.info(f"  部分止盈: 在索引 {partial_exit_idx} 以 {partial_exit_price:.4f} 平仓 {partial_tp_ratio*100:.0f}%")
+        logger.info(f"  平仓: 在索引 {exit_idx} 以 {exit_price:.4f} 平仓, 收益率: {total_return:.2%}")
+        
+        for k in range(entry_idx, exit_idx+1):
+            used_idxs.add(k)
         for k in range(entry_idx, exit_idx+1):
             used_idxs.add(k)
     trades_df = pd.DataFrame(trades)

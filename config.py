@@ -13,14 +13,16 @@ MARKET_PERIOD = os.getenv('MARKET_PERIOD', '1y')  # 数据周期（Yahoo Finance
 MARKET_INTERVAL = os.getenv('MARKET_INTERVAL', '1h')  # 数据间隔（Yahoo Finance: '1m', '5m', '15m', '30m', '1h', '1d'等）
 MARKET_TIMEFRAME = os.getenv('MARKET_TIMEFRAME', '1h')  # 时间框架（Binance: '1m', '5m', '15m', '30m', '1h', '4h', '1d', '1w'）
 MARKET_LIMIT = int(os.getenv('MARKET_LIMIT', '1000'))  # 最大数据条数（Binance，最大1000）
+SIGNAL_LOOKBACK_DAYS = int(os.getenv('SIGNAL_LOOKBACK_DAYS', '7'))  # 信号倒推天数（默认7天，即1周）
 SYNTHETIC_DATA_SIZE = int(os.getenv('SYNTHETIC_DATA_SIZE', '1500'))  # 合成数据大小
 USE_ADVANCED_TA = os.getenv('USE_ADVANCED_TA', 'True').lower() == 'true'  # 是否使用高级技术指标
 USE_ERIC_INDICATORS = os.getenv('USE_ERIC_INDICATORS', 'True').lower() == 'true'  # 是否使用 Eric 策略指标
 
 # ==================== LLM 配置 ====================
 USE_LLM = os.getenv('USE_LLM', 'True').lower() == 'true'  # 是否启用 LLM 分析
-LLM_PROVIDER = os.getenv('LLM_PROVIDER', 'openai')
-OPENAI_MODEL = os.getenv('OPENAI_MODEL', 'gpt-4o-mini')  # 根据你账户可用模型修改
+LLM_PROVIDER = os.getenv('LLM_PROVIDER', 'openai')  # LLM 提供商: 'openai' 或 'deepseek'
+OPENAI_MODEL = os.getenv('OPENAI_MODEL', 'gpt-4o-mini')  # OpenAI 模型（如 'gpt-4o-mini', 'gpt-4o'）
+DEEPSEEK_MODEL = os.getenv('DEEPSEEK_MODEL', 'deepseek-chat')  # DeepSeek 模型（如 'deepseek-chat', 'deepseek-reasoner'）
 OPENAI_TEMPERATURE = float(os.getenv('OPENAI_TEMPERATURE', '0.0'))  # LLM 温度参数
 OPENAI_MAX_TOKENS = int(os.getenv('OPENAI_MAX_TOKENS', '400'))  # LLM 最大token数
 
@@ -28,7 +30,19 @@ OPENAI_MAX_TOKENS = int(os.getenv('OPENAI_MAX_TOKENS', '400'))  # LLM 最大toke
 BACKTEST_MAX_HOLD = int(os.getenv('BACKTEST_MAX_HOLD', '20'))  # 最大持仓周期
 BACKTEST_ATR_STOP_MULT = float(os.getenv('BACKTEST_ATR_STOP_MULT', '1.0'))  # 止损 ATR 倍数
 BACKTEST_ATR_TARGET_MULT = float(os.getenv('BACKTEST_ATR_TARGET_MULT', '2.0'))  # 止盈 ATR 倍数
+BACKTEST_PARTIAL_TP_RATIO = float(os.getenv('BACKTEST_PARTIAL_TP_RATIO', '0.5'))  # 部分止盈比例（0-1，0表示不使用部分止盈）
+BACKTEST_PARTIAL_TP_MULT = float(os.getenv('BACKTEST_PARTIAL_TP_MULT', '1.0'))  # 部分止盈 ATR 倍数
 MIN_LLM_SCORE = int(os.getenv('MIN_LLM_SCORE', '40'))  # LLM 评分最低阈值
+MIN_RISK_REWARD = float(os.getenv('MIN_RISK_REWARD', '1.5'))  # 最小盈亏比要求
+MIN_QUALITY_SCORE = int(os.getenv('MIN_QUALITY_SCORE', '50'))  # 最小质量评分
+MIN_CONFIRMATIONS = int(os.getenv('MIN_CONFIRMATIONS', '2'))  # 最小确认数量
+USE_SIGNAL_FILTER = os.getenv('USE_SIGNAL_FILTER', 'True').lower() == 'true'  # 是否使用信号过滤器
+
+# ==================== 短单交易配置 ====================
+TRADING_MODE = os.getenv('TRADING_MODE', 'normal')  # 交易模式: 'normal', 'scalping', 'swing'
+# scalping: 高频短单，降低所有阈值，适合小时级及以下
+# swing: 波段交易，提高阈值，适合日线级
+# normal: 标准模式
 
 # ==================== 日志配置 ====================
 LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO')  # DEBUG, INFO, WARNING, ERROR

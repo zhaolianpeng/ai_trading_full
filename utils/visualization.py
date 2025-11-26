@@ -108,12 +108,13 @@ def plot_price_with_signals(df: pd.DataFrame, signals: List[Dict],
         ax1.plot(df.index, df['ema100'], label='EMA100', alpha=0.7, linewidth=1)
     
     # 标注信号
+    from utils.json_i18n import get_value_safe
     for sig in signals:
-        rule = sig.get('rule', {})
-        idx = rule.get('idx', 0)
+        rule = get_value_safe(sig, 'rule', {})
+        idx = get_value_safe(rule, 'idx', 0)
         if idx < len(df):
-            llm = sig.get('llm', {})
-            signal_type = llm.get('signal', 'Neutral') if isinstance(llm, dict) else 'Neutral'
+            llm = get_value_safe(sig, 'llm', {})
+            signal_type = get_value_safe(llm, 'signal', 'Neutral') if isinstance(llm, dict) else 'Neutral'
             color = 'green' if signal_type == 'Long' else 'red' if signal_type == 'Short' else 'gray'
             ax1.scatter(df.index[idx], df['close'].iloc[idx], 
                        color=color, s=100, alpha=0.6, marker='^' if signal_type == 'Long' else 'v')
@@ -260,13 +261,15 @@ def generate_report(df: pd.DataFrame, signals: List[Dict],
     if signals:
         signal_types = {}
         llm_signals = {}
+        from utils.json_i18n import get_value_safe
         for sig in signals:
-            rule_type = sig.get('rule', {}).get('type', 'unknown')
+            rule = get_value_safe(sig, 'rule', {})
+            rule_type = get_value_safe(rule, 'type', 'unknown')
             signal_types[rule_type] = signal_types.get(rule_type, 0) + 1
             
-            llm = sig.get('llm', {})
+            llm = get_value_safe(sig, 'llm', {})
             if isinstance(llm, dict):
-                llm_signal = llm.get('signal', 'Neutral')
+                llm_signal = get_value_safe(llm, 'signal', 'Neutral')
                 llm_signals[llm_signal] = llm_signals.get(llm_signal, 0) + 1
         
         report.append("\n信号类型分布:")
