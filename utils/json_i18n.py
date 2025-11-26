@@ -33,6 +33,19 @@ KEY_MAPPING = {
     'signal': '信号',
     'explanation': '解释',
     'risk': '风险',
+    
+    # 时间相关
+    'signal_time': '信号时间',
+    'entry_time': '开单时间',
+    'exit_time': '平仓时间',
+    'partial_exit_time': '部分止盈时间',
+    '交易时间': '交易时间',
+    
+    # 入场点相关
+    'best_entry_3m': '3分钟最佳入场点',
+    'entry_price': '入场价格',
+    'entry_reason': '入场原因',
+    'entry_score': '入场评分',
 }
 
 # 反向映射（中文 -> 英文，用于读取）

@@ -144,18 +144,33 @@ def simple_backtest(df, enhanced_signals, max_hold=20, atr_mult_stop=1.0, atr_mu
         
         rule_type = get_value_safe(s, 'type', 'unknown')
         
+        # 获取时间信息
+        entry_time = None
+        exit_time = None
+        partial_exit_time = None
+        if isinstance(df.index, pd.DatetimeIndex):
+            if entry_idx < len(df.index):
+                entry_time = df.index[entry_idx]
+            if exit_idx is not None and exit_idx < len(df.index):
+                exit_time = df.index[exit_idx]
+            if partial_exit_idx is not None and partial_exit_idx < len(df.index):
+                partial_exit_time = df.index[partial_exit_idx]
+        
         # 记录详细交易信息
         trade_record = {
             'entry_idx': entry_idx,
             'exit_idx': exit_idx,
             'entry_price': entry_price,
             'exit_price': exit_price,
+            'entry_time': entry_time.isoformat() if entry_time else None,
+            'exit_time': exit_time.isoformat() if exit_time else None,
             'stop_loss': stop_loss,
             'full_take_profit': full_take_profit,
             'partial_take_profit': partial_take_profit if partial_take_profit else None,
             'partial_exited': partial_exited,
             'partial_exit_price': partial_exit_price if partial_exited else None,
             'partial_exit_idx': partial_exit_idx if partial_exited else None,
+            'partial_exit_time': partial_exit_time.isoformat() if partial_exit_time else None,
             'return': total_return,
             'rule_type': rule_type,
             'llm_score': score,

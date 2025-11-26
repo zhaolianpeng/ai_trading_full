@@ -2,6 +2,7 @@
 import json
 import sys
 import os
+import pandas as pd
 from pathlib import Path
 from data.loader import gen_synthetic, load_csv
 from data.market_data import fetch_market_data, get_popular_symbols
@@ -132,14 +133,78 @@ def main():
             )
             logger.info(f"信号过滤后剩余 {len(enhanced)} 个高质量信号")
         
-        # 3. 保存信号日志（使用中文关键字）
+        # 3. 为确认的信号查找3分钟周期最佳入场点
+        logger.info("为确认的信号查找3分钟周期最佳入场点...")
+        from utils.entry_finder import find_best_entry_point_3m
+        from datetime import datetime
+        
+        for signal in enhanced:
+            # 获取信号信息
+            rule = signal.get('rule', {})
+            llm = signal.get('llm', {})
+            signal_idx = rule.get('idx', -1)
+            signal_direction = llm.get('signal', 'Neutral')
+            
+            # 只处理 Long 信号
+            if signal_direction != 'Long':
+                continue
+            
+            # 获取信号时间和价格
+            signal_time = None
+            signal_price = None
+            
+            if 'signal_time' in signal and signal['signal_time']:
+                try:
+                    signal_time = pd.to_datetime(signal['signal_time'])
+                except:
+                    pass
+            
+            if signal_time is None and signal_idx >= 0 and signal_idx < len(df):
+                if isinstance(df.index, pd.DatetimeIndex):
+                    signal_time = df.index[signal_idx]
+                else:
+                    continue
+            
+            if signal_time is None:
+                continue
+            
+            signal_price = df['close'].iloc[signal_idx] if signal_idx < len(df) else None
+            if signal_price is None:
+                continue
+            
+            # 查找最佳入场点
+            entry_point = find_best_entry_point_3m(
+                signal_time=signal_time,
+                signal_price=signal_price,
+                signal_direction=signal_direction
+            )
+            
+            if entry_point:
+                # 将入场时间转换为北京时间并格式化
+                from utils.time_utils import to_beijing_time
+                entry_time_str = to_beijing_time(entry_point['entry_time'])
+                
+                signal['best_entry_3m'] = {
+                    'entry_time': entry_time_str,
+                    'entry_price': entry_point['entry_price'],
+                    'entry_reason': entry_point['entry_reason'],
+                    'entry_score': entry_point['entry_score']
+                }
+                logger.info(f"信号 {signal_idx}: 找到3分钟入场点，价格={entry_point['entry_price']:.2f}, 时间={entry_time_str}")
+        
+        # 3.5. 保存信号日志（使用中文关键字，并转换为北京时间）
         output_dir = Path(OUTPUT_DIR)
         output_dir.mkdir(parents=True, exist_ok=True)
         
         signals_file = output_dir / 'signals_log.json'
-        logger.info(f"保存信号到 {signals_file}（中文关键字）")
+        logger.info(f"保存信号到 {signals_file}（中文关键字，北京时间）")
         from utils.json_i18n import translate_keys_to_chinese
+        from utils.time_utils import convert_dict_times_to_beijing
+        
         enhanced_cn = translate_keys_to_chinese(enhanced)
+        # 转换所有时间为北京时间
+        enhanced_cn = [convert_dict_times_to_beijing(signal) for signal in enhanced_cn]
+        
         with open(signals_file, 'w', encoding='utf8') as f:
             json.dump(enhanced_cn, f, ensure_ascii=False, indent=2, default=str)
         
@@ -168,6 +233,63 @@ def main():
             partial_tp_mult=partial_tp_mult
         )
         
+        # 3.5. 更新信号日志，添加止盈止损时间信息
+        if not trades_df.empty and len(enhanced_cn) > 0:
+            logger.info("更新信号日志，添加止盈止损时间信息...")
+            # 建立信号索引到交易记录的映射
+            signal_to_trade = {}
+            for trade_idx, trade in trades_df.iterrows():
+                entry_idx = int(trade['entry_idx'])
+                # 找到对应的信号（通过 entry_idx 匹配）
+                for signal_idx, signal in enumerate(enhanced):
+                    rule = signal.get('rule', {})
+                    signal_entry_idx = rule.get('idx', -1)
+                    # entry_idx 是 signal_entry_idx + 1（因为开单在信号后一个周期）
+                    if signal_entry_idx + 1 == entry_idx:
+                        signal_to_trade[signal_idx] = trade
+                        break
+            
+            # 更新信号日志
+            for signal_idx, trade in signal_to_trade.items():
+                if signal_idx < len(enhanced_cn):
+                    signal = enhanced_cn[signal_idx]
+                    # 添加交易时间信息
+                    stop_loss_val = trade.get('stop_loss', None)
+                    full_tp_val = trade.get('full_take_profit', None)
+                    partial_tp_val = trade.get('partial_take_profit', None)
+                    
+                    # 安全地转换为 float（处理 None 和 NaN 值）
+                    def safe_float(val):
+                        if val is None:
+                            return None
+                        try:
+                            # 如果是 pandas Series 或 numpy 类型，先转换为 Python 类型
+                            if hasattr(val, 'item'):
+                                val = val.item()
+                            # 检查是否为 NaN（float('nan') 或 numpy.nan）
+                            if isinstance(val, float) and val != val:  # NaN 检查
+                                return None
+                            return float(val)
+                        except (ValueError, TypeError):
+                            return None
+                    
+                    signal['交易时间'] = {
+                        '开单时间': trade.get('entry_time', None),
+                        '平仓时间': trade.get('exit_time', None),
+                        '部分止盈时间': trade.get('partial_exit_time', None),
+                        '止损价': safe_float(stop_loss_val),
+                        '全部止盈价': safe_float(full_tp_val),
+                        '部分止盈价': safe_float(partial_tp_val)
+                    }
+            
+            # 重新保存更新后的信号日志（转换为北京时间）
+            from utils.time_utils import convert_dict_times_to_beijing
+            enhanced_cn = [convert_dict_times_to_beijing(signal) for signal in enhanced_cn]
+            
+            with open(signals_file, 'w', encoding='utf8') as f:
+                json.dump(enhanced_cn, f, ensure_ascii=False, indent=2, default=str)
+            logger.info(f"已更新信号日志，添加了 {len(signal_to_trade)} 个交易的止盈止损时间信息（北京时间）")
+        
         # 5. 输出结果
         from utils.i18n import format_metric_value
         logger.info("=" * 60)
@@ -177,7 +299,6 @@ def main():
         logger.info("=" * 60)
         
         # 输出每笔交易的详细信息
-        import pandas as pd
         if not trades_df.empty:
             logger.info("\n交易明细:")
             logger.info("-" * 80)

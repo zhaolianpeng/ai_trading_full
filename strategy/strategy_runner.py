@@ -128,7 +128,23 @@ def run_strategy(df, use_llm=USE_LLM, use_advanced_ta=True, use_eric_indicators=
                 # 使用 fallback
                 llm_out = interpret_with_llm(packet, provider=LLM_PROVIDER, model=model, use_llm=False)
             
-            enhanced_signals.append({'rule': s, 'feature_packet': packet, 'llm': llm_out})
+            # 添加时间戳（信号产生时间）
+            signal_time = None
+            if isinstance(df.index, pd.DatetimeIndex) and idx < len(df.index):
+                signal_time = df.index[idx]
+            elif hasattr(df.index, '__getitem__') and idx < len(df):
+                # 尝试从索引获取时间
+                try:
+                    signal_time = df.index[idx]
+                except:
+                    pass
+            
+            enhanced_signals.append({
+                'rule': s, 
+                'feature_packet': packet, 
+                'llm': llm_out,
+                'signal_time': signal_time.isoformat() if signal_time else None
+            })
         
         if batch_idx < total_batches - 1:
             logger.debug(f"Processed {end_idx}/{len(signals)} signals...")
