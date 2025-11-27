@@ -49,6 +49,16 @@ def get_deepseek_client() -> OpenAI:
         )
     return _deepseek_client
 
+def _rate_limit_wait(provider: str):
+    """简单的速率限制：确保请求间隔"""
+    global _last_request_time
+    current_time = time.time()
+    if provider in _last_request_time:
+        elapsed = current_time - _last_request_time[provider]
+        if elapsed < _min_request_interval:
+            time.sleep(_min_request_interval - elapsed)
+    _last_request_time[provider] = time.time()
+
 def call_openai_chat(prompt: str, model: str = 'gpt-4o-mini', 
                      temperature: float = 0.0, max_tokens: int = 400,
                      retry_count: int = 3) -> str:
@@ -68,9 +78,11 @@ def call_openai_chat(prompt: str, model: str = 'gpt-4o-mini',
         RuntimeError: API key 未设置或包未安装
         Exception: API 调用失败
     """
-    import time
     for attempt in range(retry_count):
         try:
+            # 速率限制
+            _rate_limit_wait('openai')
+            
             client = get_openai_client()
             response = client.chat.completions.create(
                 model=model,
@@ -79,16 +91,27 @@ def call_openai_chat(prompt: str, model: str = 'gpt-4o-mini',
                 max_tokens=max_tokens
             )
             txt = response.choices[0].message.content
-            if txt is None:
-                raise ValueError("Empty response from OpenAI API")
-            return txt
+            if txt is None or txt.strip() == '':
+                raise ValueError(f"Empty response from OpenAI API (model={model})")
+            return txt.strip()
         except Exception as e:
+            error_msg = str(e)
+            error_type = type(e).__name__
+            
+            # 检查是否是限流错误（429）
+            is_rate_limit = '429' in error_msg or 'rate limit' in error_msg.lower() or 'quota' in error_msg.lower()
+            
             if attempt < retry_count - 1:
-                wait_time = 2 ** attempt  # 指数退避
-                logger.warning(f"OpenAI API call failed (attempt {attempt+1}/{retry_count}): {e}. Retrying in {wait_time}s...")
+                # 限流错误使用更长的等待时间
+                if is_rate_limit:
+                    wait_time = 10 + (2 ** attempt)  # 限流时等待更长时间
+                    logger.warning(f"OpenAI API限流 (attempt {attempt+1}/{retry_count}): {error_msg}. 等待 {wait_time}s 后重试...")
+                else:
+                    wait_time = 2 ** attempt  # 指数退避
+                    logger.warning(f"OpenAI API调用失败 (attempt {attempt+1}/{retry_count}): {error_type}: {error_msg}. 等待 {wait_time}s 后重试...")
                 time.sleep(wait_time)
             else:
-                logger.error(f"OpenAI API call failed after {retry_count} attempts: {e}")
+                logger.error(f"OpenAI API调用失败，已重试 {retry_count} 次: {error_type}: {error_msg}")
                 raise
 
 def call_deepseek_chat(prompt: str, model: str = 'deepseek-reasoner', 
@@ -113,9 +136,11 @@ def call_deepseek_chat(prompt: str, model: str = 'deepseek-reasoner',
         RuntimeError: API key 未设置或包未安装
         Exception: API 调用失败
     """
-    import time
     for attempt in range(retry_count):
         try:
+            # 速率限制
+            _rate_limit_wait('deepseek')
+            
             client = get_deepseek_client()
             response = client.chat.completions.create(
                 model=model,
@@ -124,16 +149,27 @@ def call_deepseek_chat(prompt: str, model: str = 'deepseek-reasoner',
                 max_tokens=max_tokens
             )
             txt = response.choices[0].message.content
-            if txt is None:
-                raise ValueError("Empty response from DeepSeek API")
-            return txt
+            if txt is None or txt.strip() == '':
+                raise ValueError(f"Empty response from DeepSeek API (model={model})")
+            return txt.strip()
         except Exception as e:
+            error_msg = str(e)
+            error_type = type(e).__name__
+            
+            # 检查是否是限流错误（429）
+            is_rate_limit = '429' in error_msg or 'rate limit' in error_msg.lower() or 'quota' in error_msg.lower()
+            
             if attempt < retry_count - 1:
-                wait_time = 2 ** attempt  # 指数退避
-                logger.warning(f"DeepSeek API call failed (attempt {attempt+1}/{retry_count}): {e}. Retrying in {wait_time}s...")
+                # 限流错误使用更长的等待时间
+                if is_rate_limit:
+                    wait_time = 10 + (2 ** attempt)  # 限流时等待更长时间
+                    logger.warning(f"DeepSeek API限流 (attempt {attempt+1}/{retry_count}): {error_msg}. 等待 {wait_time}s 后重试...")
+                else:
+                    wait_time = 2 ** attempt  # 指数退避
+                    logger.warning(f"DeepSeek API调用失败 (attempt {attempt+1}/{retry_count}): {error_type}: {error_msg}. 等待 {wait_time}s 后重试...")
                 time.sleep(wait_time)
             else:
-                logger.error(f"DeepSeek API call failed after {retry_count} attempts: {e}")
+                logger.error(f"DeepSeek API调用失败，已重试 {retry_count} 次: {error_type}: {error_msg}")
                 raise
 
 def ask_llm(prompt: str, provider: str = 'openai', model: str = 'gpt-4o-mini',

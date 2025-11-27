@@ -43,9 +43,14 @@ def interpret_with_llm(feature_packet, provider='openai', model='gpt-4o-mini',
                 safe_packet[k] = str(v)
         prompt = MARKET_STRUCTURE_PROMPT + "\n\n特征数据：\n" + json.dumps(safe_packet, ensure_ascii=False)
     try:
-        txt = ask_llm(prompt, provider=provider, model=model)
+        txt = ask_llm(prompt, provider=provider, model=model, temperature=temperature, max_tokens=max_tokens)
+        # 检查返回文本是否为空
+        if not txt or txt.strip() == '':
+            logger.warning(f"LLM返回空响应 (provider={provider}, model={model}), 使用fallback")
+            return interpret_with_llm(feature_packet, provider=provider, model=model, use_llm=False)
     except Exception as e:
-        logger.warning(f"LLM call failed: {e}, using fallback")
+        error_msg = str(e)
+        logger.warning(f"LLM调用失败 (provider={provider}, model={model}): {error_msg}, 使用fallback")
         return interpret_with_llm(feature_packet, provider=provider, model=model, use_llm=False)
     # 尝试把 LLM 返回解析为 JSON
     parsed = None
@@ -120,7 +125,14 @@ def interpret_with_llm(feature_packet, provider='openai', model='gpt-4o-mini',
     
     # 如果所有方法都失败，使用fallback
     if parsed is None:
-        logger.warning(f"LLM返回的JSON解析失败: {json_error}, 原始文本前200字符: {txt[:200]}")
+        # 记录更详细的错误信息
+        txt_preview = txt[:200] if txt else "(空响应)"
+        logger.warning(f"LLM返回的JSON解析失败: {json_error}, 原始文本前200字符: {txt_preview}")
+        
+        # 如果响应为空，直接使用fallback
+        if not txt or txt.strip() == '':
+            logger.warning("LLM返回空响应，使用fallback启发式方法")
+            return interpret_with_llm(feature_packet, provider=provider, model=model, use_llm=False)
         logger.warning(f"使用fallback启发式方法")
         parsed = interpret_with_llm(feature_packet, provider=provider, model=model, use_llm=False)
     
