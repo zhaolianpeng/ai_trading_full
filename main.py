@@ -104,10 +104,95 @@ def main():
             df = gen_synthetic(SYNTHETIC_DATA_SIZE)
             logger.info(f"已生成 {len(df)} 行合成数据")
         
-        # 2. 运行策略（倒推指定天数内的信号）
-        logger.info(f"运行策略 (使用LLM={USE_LLM}, 使用高级指标={USE_ADVANCED_TA}, 使用Eric指标={USE_ERIC_INDICATORS})...")
-        df, enhanced = run_strategy(df, use_llm=USE_LLM, use_advanced_ta=USE_ADVANCED_TA, 
-                                   use_eric_indicators=USE_ERIC_INDICATORS, lookback_days=SIGNAL_LOOKBACK_DAYS)
+        # 2. 多时间周期综合分析（查询过往7天的行情数据，分别计算1小时、4小时、天级的K线）
+        logger.info("=" * 60)
+        logger.info("开始多时间周期综合分析")
+        logger.info("=" * 60)
+        
+        use_multi_timeframe = os.getenv('USE_MULTI_TIMEFRAME', 'True').lower() == 'true'
+        min_timeframe_confirmations = int(os.getenv('MIN_TIMEFRAME_CONFIRMATIONS', '2'))
+        
+        if use_multi_timeframe and DATA_SOURCE in ['binance', 'yahoo']:
+            from strategy.multi_timeframe_analyzer import run_multi_timeframe_strategy
+            
+            # 运行多时间周期分析
+            multi_timeframe_data, combined_signals = run_multi_timeframe_strategy(
+                symbol=MARKET_SYMBOL,
+                data_source=DATA_SOURCE,
+                lookback_days=SIGNAL_LOOKBACK_DAYS,
+                min_confirmations=min_timeframe_confirmations,
+                use_advanced_ta=USE_ADVANCED_TA,
+                use_eric_indicators=USE_ERIC_INDICATORS
+            )
+            
+            if combined_signals:
+                logger.info(f"多时间周期分析找到 {len(combined_signals)} 个确认信号")
+                # 使用1h数据作为主数据（用于后续分析和回测）
+                if '1h' in multi_timeframe_data:
+                    df = multi_timeframe_data['1h']
+                else:
+                    # 如果没有1h数据，使用第一个可用的时间周期
+                    df = list(multi_timeframe_data.values())[0] if multi_timeframe_data else df
+                
+                # 将多时间周期确认的信号转换为标准格式，并进行LLM分析
+                enhanced = []
+                from strategy.strategy_runner import build_feature_packet
+                from ai_agent.signal_interpret import interpret_with_llm
+                from config import LLM_PROVIDER, DEEPSEEK_MODEL, OPENAI_MODEL, OPENAI_TEMPERATURE, OPENAI_MAX_TOKENS
+                
+                for combined_signal in combined_signals:
+                    base_signal = combined_signal['base_signal']
+                    signal_idx = base_signal.get('idx', -1)
+                    
+                    # 构建特征包（使用1h数据）
+                    if signal_idx >= 0 and signal_idx < len(df):
+                        packet = build_feature_packet(df, signal_idx)
+                        
+                        # LLM分析
+                        model = DEEPSEEK_MODEL if LLM_PROVIDER == 'deepseek' else OPENAI_MODEL
+                        try:
+                            llm_out = interpret_with_llm(
+                                packet,
+                                provider=LLM_PROVIDER,
+                                model=model,
+                                use_llm=USE_LLM,
+                                temperature=OPENAI_TEMPERATURE,
+                                max_tokens=OPENAI_MAX_TOKENS
+                            )
+                        except Exception as e:
+                            logger.warning(f"LLM分析失败: {e}，使用fallback")
+                            llm_out = interpret_with_llm(packet, provider=LLM_PROVIDER, model=model, use_llm=False)
+                        
+                        # 添加时间戳
+                        signal_time = None
+                        if isinstance(df.index, pd.DatetimeIndex) and signal_idx < len(df.index):
+                            signal_time = df.index[signal_idx]
+                        
+                        # 构建增强信号
+                        enhanced_signal = {
+                            'rule': base_signal,
+                            'feature_packet': packet,
+                            'llm': llm_out,
+                            'signal_time': signal_time.isoformat() if signal_time else None,
+                            'multi_timeframe': {
+                                'confirmations': combined_signal['confirmed_timeframes'],
+                                'confirmation_count': combined_signal['confirmation_count']
+                            }
+                        }
+                        enhanced.append(enhanced_signal)
+                
+                logger.info(f"转换后共有 {len(enhanced)} 个多时间周期确认的信号（已进行LLM分析）")
+            else:
+                logger.warning("多时间周期分析未找到确认信号，使用单时间周期分析")
+                # 回退到单时间周期分析
+                df, enhanced = run_strategy(df, use_llm=USE_LLM, use_advanced_ta=USE_ADVANCED_TA, 
+                                           use_eric_indicators=USE_ERIC_INDICATORS, lookback_days=SIGNAL_LOOKBACK_DAYS)
+        else:
+            # 单时间周期分析（原有逻辑）
+            logger.info(f"运行单时间周期策略 (使用LLM={USE_LLM}, 使用高级指标={USE_ADVANCED_TA}, 使用Eric指标={USE_ERIC_INDICATORS})...")
+            df, enhanced = run_strategy(df, use_llm=USE_LLM, use_advanced_ta=USE_ADVANCED_TA, 
+                                       use_eric_indicators=USE_ERIC_INDICATORS, lookback_days=SIGNAL_LOOKBACK_DAYS)
+        
         logger.info(f"检测到 {len(enhanced)} 个信号（最近 {SIGNAL_LOOKBACK_DAYS} 天内）")
         
         # 2.5. 应用信号过滤器（提升胜率）

@@ -205,6 +205,10 @@ def fetch_binance_data(
         # 用户可以通过环境变量 MARKET_TYPE 指定：'spot', 'future', 'swap'
         market_type = os.getenv('MARKET_TYPE', 'future' if 'USDT' in symbol else 'spot')
         
+        # 对于BTC/USDT等，默认使用永续合约
+        if 'USDT' in symbol and market_type == 'spot':
+            logger.warning(f"检测到 {symbol} 但 MARKET_TYPE=spot，建议使用 MARKET_TYPE=future 获取永续合约价格")
+        
         exchange = ccxt.binance({
             'enableRateLimit': True,
             'options': {
@@ -212,7 +216,7 @@ def fetch_binance_data(
             }
         })
         
-        logger.info(f"使用 Binance {market_type} 市场获取数据")
+        logger.info(f"使用 Binance {market_type} 市场获取 {symbol} 数据")
         
         # 转换时间框架格式
         timeframe_map = {
@@ -222,16 +226,30 @@ def fetch_binance_data(
         if timeframe not in timeframe_map:
             raise ValueError(f"Unsupported timeframe: {timeframe}")
         
-        # 获取数据
-        if start_time and end_time:
-            since = int(start_time.timestamp() * 1000)
-            ohlcv = exchange.fetch_ohlcv(symbol, timeframe, since=since, limit=limit)
-        elif start_time:
-            since = int(start_time.timestamp() * 1000)
-            ohlcv = exchange.fetch_ohlcv(symbol, timeframe, since=since, limit=limit)
-        else:
-            # 获取最近的数据
+        # 获取数据（优先获取最新数据）
+        # 注意：不指定since参数，直接获取最新的limit条数据，确保获取到最新价格
+        try:
+            # 方法1：直接获取最新数据（推荐）
             ohlcv = exchange.fetch_ohlcv(symbol, timeframe, limit=limit)
+            
+            # 如果指定了start_time，且获取的数据最早时间早于start_time，则过滤
+            if start_time and ohlcv:
+                start_timestamp = int(start_time.timestamp() * 1000)
+                # 过滤掉早于start_time的数据
+                ohlcv = [candle for candle in ohlcv if candle[0] >= start_timestamp]
+                
+                # 如果过滤后数据太少，尝试从start_time开始获取
+                if len(ohlcv) < limit // 2:
+                    logger.info(f"过滤后数据较少，从 {start_time} 开始获取数据...")
+                    since = int(start_time.timestamp() * 1000)
+                    ohlcv = exchange.fetch_ohlcv(symbol, timeframe, since=since, limit=limit)
+        except Exception as e:
+            logger.warning(f"获取最新数据失败，尝试从指定时间开始获取: {e}")
+            if start_time:
+                since = int(start_time.timestamp() * 1000)
+                ohlcv = exchange.fetch_ohlcv(symbol, timeframe, since=since, limit=limit)
+            else:
+                ohlcv = exchange.fetch_ohlcv(symbol, timeframe, limit=limit)
         
         if not ohlcv:
             raise ValueError(f"No data returned for symbol {symbol}")
@@ -252,7 +270,49 @@ def fetch_binance_data(
         logger.info(f"Fetched {len(df)} rows from Binance")
         logger.info(f"Date range: {df.index.min()} to {df.index.max()}")
         logger.info(f"Price range: ${df['close'].min():.2f} - ${df['close'].max():.2f}")
-        logger.info(f"最新价格: ${df['close'].iloc[-1]:.2f} (时间: {df.index[-1]})")
+        
+        # 获取最新的ticker价格，确保数据是最新的
+        last_kline_time = df.index[-1]
+        last_kline_price = df['close'].iloc[-1]
+        
+        try:
+            ticker = exchange.fetch_ticker(symbol)
+            latest_price = ticker.get('last', None)
+            ticker_time = ticker.get('timestamp', None)
+            
+            if latest_price:
+                # 格式化ticker时间
+                if ticker_time:
+                    ticker_dt = pd.to_datetime(ticker_time, unit='ms')
+                    logger.info(f"✅ 最新ticker价格: ${latest_price:.2f} (时间: {ticker_dt})")
+                else:
+                    logger.info(f"✅ 最新ticker价格: ${latest_price:.2f}")
+                
+                # 如果最新ticker价格与最后一条K线价格差异较大，记录警告
+                price_diff_pct = abs(latest_price - last_kline_price) / latest_price * 100
+                
+                if price_diff_pct > 1.0:  # 如果差异超过1%
+                    logger.error(f"❌ 严重价格差异: ticker价格 ${latest_price:.2f} vs K线价格 ${last_kline_price:.2f} (差异 {price_diff_pct:.2f}%)")
+                    logger.error(f"   可能原因:")
+                    logger.error(f"   1. 使用了错误的市场类型 (当前: {market_type})")
+                    logger.error(f"   2. K线数据不是最新的")
+                    logger.error(f"   3. 符号格式不正确 (当前: {symbol})")
+                    logger.error(f"   建议: 检查 MARKET_TYPE 环境变量，确保设置为 'future'")
+                elif price_diff_pct > 0.1:  # 如果差异超过0.1%
+                    logger.warning(f"⚠️ 价格差异: ticker价格 ${latest_price:.2f} vs K线价格 ${last_kline_price:.2f} (差异 {price_diff_pct:.2f}%)")
+                    logger.warning(f"   这可能是因为K线数据不是最新的，或者使用了不同的市场类型")
+        except Exception as e:
+            logger.warning(f"无法获取最新ticker价格: {e}")
+        
+        logger.info(f"📊 最后K线价格: ${last_kline_price:.2f} (时间: {last_kline_time})")
+        
+        # 验证价格是否在合理范围内（BTC价格应该在10000-200000之间）
+        if last_kline_price < 10000 or last_kline_price > 200000:
+            logger.error(f"❌ K线价格异常: ${last_kline_price:.2f}")
+            logger.error(f"   BTC价格应该在 $10,000 - $200,000 之间")
+            logger.error(f"   当前市场类型: {market_type}")
+            logger.error(f"   当前符号: {symbol}")
+            logger.error(f"   建议检查 MARKET_TYPE 环境变量")
         
         return df
         
