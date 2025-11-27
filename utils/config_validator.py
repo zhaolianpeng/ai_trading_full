@@ -63,8 +63,10 @@ def validate_config() -> Tuple[bool, List[str]]:
     
     try:
         max_tokens = int(os.getenv('OPENAI_MAX_TOKENS', '400'))
-        if max_tokens < 1 or max_tokens > 4000:
-            errors.append("OPENAI_MAX_TOKENS must be between 1 and 4000")
+        # 对于 deepseek-reasoner 等推理模型，可能需要更大的 max_tokens
+        # 将上限提高到 8000，以支持推理模型的更长响应
+        if max_tokens < 1 or max_tokens > 8000:
+            errors.append("OPENAI_MAX_TOKENS must be between 1 and 8000")
     except ValueError:
         errors.append("OPENAI_MAX_TOKENS must be a valid integer")
     
