@@ -4,8 +4,10 @@
 """
 import pandas as pd
 import numpy as np
+import os
 from utils.logger import logger
 from utils.json_i18n import get_value_safe
+from strategy.market_structure_analyzer import calculate_trend_strength
 
 def calculate_risk_reward_ratio(df, idx, entry_price, stop_loss, take_profit):
     """
@@ -283,6 +285,90 @@ def apply_signal_filters(df, enhanced_signals,
         if risk_reward_ratio < min_risk_reward:
             skipped_count += 1
             continue
+        
+        # ========== 强制过滤器 ==========
+        row = df.iloc[idx]
+        filter_failed_reasons = []
+        
+        # 1. ATR 过滤（避免低波动）
+        # 检查 ATR 相对于价格的百分比是否足够（至少 0.5%）
+        if 'atr14' in df.columns and not pd.isna(row['atr14']):
+            atr_pct = (row['atr14'] / row['close']) * 100 if row['close'] > 0 else 0
+            min_atr_pct = float(os.getenv('MIN_ATR_PCT', '0.5'))  # 默认 0.5%
+            if atr_pct < min_atr_pct:
+                filter_failed_reasons.append(f"ATR过低({atr_pct:.2f}% < {min_atr_pct}%)")
+        else:
+            filter_failed_reasons.append("ATR数据缺失")
+        
+        # 2. EMA 多头排列过滤（强制要求）
+        if 'ema21' in df.columns and 'ema55' in df.columns and 'ema100' in df.columns:
+            ema_bull = row['ema21'] > row['ema55'] > row['ema100']
+            if not ema_bull:
+                filter_failed_reasons.append("EMA未形成多头排列")
+        else:
+            filter_failed_reasons.append("EMA数据缺失")
+        
+        # 3. 趋势强度 > 50
+        try:
+            # 使用最近50根K线计算趋势强度
+            trend_strength = calculate_trend_strength(df.iloc[max(0, idx-49):idx+1], n=min(50, idx+1))
+            if trend_strength <= 50:
+                filter_failed_reasons.append(f"趋势强度不足({trend_strength:.1f} <= 50)")
+        except Exception as e:
+            logger.warning(f"计算趋势强度失败: {e}")
+            filter_failed_reasons.append("趋势强度计算失败")
+        
+        # 4. 突破有效性 = VALID
+        # 检查是否有突破信号，如果有，验证其有效性
+        feature_packet = get_value_safe(item, 'feature_packet', {})
+        has_breakout = get_value_safe(feature_packet, 'breakout', False)
+        
+        if has_breakout:
+            # 验证突破有效性
+            breakout_valid = False
+            breakout_fail_reason = None
+            
+            # 检查1: 成交量是否放大
+            vol_ratio = get_value_safe(feature_packet, 'vol_ratio', None)
+            if vol_ratio is None or vol_ratio < 1.2:
+                vol_ratio_display = vol_ratio if vol_ratio is not None else 0
+                breakout_fail_reason = f"突破时成交量未放大(vol_ratio={vol_ratio_display:.2f} < 1.2)"
+            else:
+                # 检查2: 价格是否持续在阻力位上方（检查最近3根K线）
+                if 'res50' in df.columns and not pd.isna(row['res50']):
+                    # 检查最近3根K线是否都在阻力位上方
+                    lookback = min(3, idx + 1)
+                    closes_above_res = all(
+                        df['close'].iloc[max(0, idx-i)] > row['res50'] 
+                        for i in range(lookback)
+                    )
+                    if closes_above_res:
+                        breakout_valid = True
+                    else:
+                        breakout_fail_reason = "突破后价格未持续在阻力位上方"
+                else:
+                    # 如果没有阻力位数据，检查价格是否创新高
+                    if idx >= 20:
+                        recent_high = df['high'].iloc[max(0, idx-20):idx+1].max()
+                        if row['close'] >= recent_high * 0.99:  # 接近或创新高
+                            breakout_valid = True
+                        else:
+                            breakout_fail_reason = "突破未创新高"
+                    else:
+                        # 数据不足，假设有效
+                        breakout_valid = True
+            
+            if not breakout_valid and breakout_fail_reason:
+                filter_failed_reasons.append(breakout_fail_reason)
+        # 如果没有突破信号，不需要验证突破有效性（允许非突破信号通过）
+        
+        # 如果任何强制过滤器失败，跳过该信号
+        if filter_failed_reasons:
+            logger.debug(f"信号 {idx} 被强制过滤器拒绝: {', '.join(filter_failed_reasons)}")
+            skipped_count += 1
+            continue
+        
+        # ========== 所有过滤器通过 ==========
         
         # 添加到过滤后的信号列表
         filtered_item = item.copy()

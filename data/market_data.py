@@ -176,7 +176,8 @@ def fetch_binance_data(
     timeframe: str = "1h",
     limit: int = 1000,
     start_time: Optional[datetime] = None,
-    end_time: Optional[datetime] = None
+    end_time: Optional[datetime] = None,
+    months: Optional[int] = None
 ) -> pd.DataFrame:
     """
     从 Binance 获取加密货币数据
@@ -226,30 +227,95 @@ def fetch_binance_data(
         if timeframe not in timeframe_map:
             raise ValueError(f"Unsupported timeframe: {timeframe}")
         
-        # 获取数据（优先获取最新数据）
-        # 注意：不指定since参数，直接获取最新的limit条数据，确保获取到最新价格
-        try:
-            # 方法1：直接获取最新数据（推荐）
-            ohlcv = exchange.fetch_ohlcv(symbol, timeframe, limit=limit)
+        # 获取数据（支持获取超过1000条数据）
+        ohlcv = []
+        
+        # 如果指定了months，计算需要的数据量
+        if months:
+            # 根据时间框架估算需要的数据条数
+            timeframe_hours = {
+                '1m': 1/60, '5m': 5/60, '15m': 15/60, '30m': 30/60,
+                '1h': 1, '4h': 4, '1d': 24, '1w': 168
+            }
+            hours_per_bar = timeframe_hours.get(timeframe, 1)
+            total_bars_needed = int((months * 30 * 24) / hours_per_bar)
             
-            # 如果指定了start_time，且获取的数据最早时间早于start_time，则过滤
-            if start_time and ohlcv:
-                start_timestamp = int(start_time.timestamp() * 1000)
-                # 过滤掉早于start_time的数据
-                ohlcv = [candle for candle in ohlcv if candle[0] >= start_timestamp]
+            logger.info(f"需要获取 {months} 个月的数据，估算需要约 {total_bars_needed} 根K线")
+            
+            # 计算开始时间
+            if not start_time:
+                from datetime import datetime, timedelta
+                start_time = datetime.now() - timedelta(days=months * 30)
+            
+            # 分批获取数据（每次最多1000条）
+            current_time = datetime.now()
+            batch_start = start_time
+            max_batch_size = 1000
+            
+            while batch_start < current_time and len(ohlcv) < total_bars_needed:
+                batch_start_timestamp = int(batch_start.timestamp() * 1000)
+                try:
+                    batch_ohlcv = exchange.fetch_ohlcv(symbol, timeframe, since=batch_start_timestamp, limit=max_batch_size)
+                    if not batch_ohlcv:
+                        break
+                    
+                    # 去重（按时间戳）
+                    existing_timestamps = {c[0] for c in ohlcv}
+                    new_candles = [c for c in batch_ohlcv if c[0] not in existing_timestamps]
+                    ohlcv.extend(new_candles)
+                    
+                    # 更新下一批的开始时间（使用最后一条K线的时间）
+                    if batch_ohlcv:
+                        last_timestamp = batch_ohlcv[-1][0]
+                        batch_start = datetime.fromtimestamp(last_timestamp / 1000)
+                        # 添加一个时间间隔，避免重复
+                        if timeframe == '1h':
+                            batch_start += timedelta(hours=1)
+                        elif timeframe == '4h':
+                            batch_start += timedelta(hours=4)
+                        elif timeframe == '1d':
+                            batch_start += timedelta(days=1)
+                        else:
+                            batch_start += timedelta(hours=1)
+                    
+                    logger.info(f"已获取 {len(ohlcv)} 根K线，时间范围: {datetime.fromtimestamp(batch_ohlcv[0][0]/1000)} 到 {datetime.fromtimestamp(batch_ohlcv[-1][0]/1000)}")
+                    
+                    # 如果这批数据少于max_batch_size，说明已经获取完所有数据
+                    if len(batch_ohlcv) < max_batch_size:
+                        break
+                        
+                except Exception as e:
+                    logger.warning(f"获取批次数据失败: {e}")
+                    break
+            
+            # 按时间排序
+            ohlcv.sort(key=lambda x: x[0])
+            logger.info(f"总共获取了 {len(ohlcv)} 根K线")
+        
+        else:
+            # 原有逻辑：获取最新数据
+            try:
+                # 方法1：直接获取最新数据（推荐）
+                ohlcv = exchange.fetch_ohlcv(symbol, timeframe, limit=limit)
                 
-                # 如果过滤后数据太少，尝试从start_time开始获取
-                if len(ohlcv) < limit // 2:
-                    logger.info(f"过滤后数据较少，从 {start_time} 开始获取数据...")
+                # 如果指定了start_time，且获取的数据最早时间早于start_time，则过滤
+                if start_time and ohlcv:
+                    start_timestamp = int(start_time.timestamp() * 1000)
+                    # 过滤掉早于start_time的数据
+                    ohlcv = [candle for candle in ohlcv if candle[0] >= start_timestamp]
+                    
+                    # 如果过滤后数据太少，尝试从start_time开始获取
+                    if len(ohlcv) < limit // 2:
+                        logger.info(f"过滤后数据较少，从 {start_time} 开始获取数据...")
+                        since = int(start_time.timestamp() * 1000)
+                        ohlcv = exchange.fetch_ohlcv(symbol, timeframe, since=since, limit=limit)
+            except Exception as e:
+                logger.warning(f"获取最新数据失败，尝试从指定时间开始获取: {e}")
+                if start_time:
                     since = int(start_time.timestamp() * 1000)
                     ohlcv = exchange.fetch_ohlcv(symbol, timeframe, since=since, limit=limit)
-        except Exception as e:
-            logger.warning(f"获取最新数据失败，尝试从指定时间开始获取: {e}")
-            if start_time:
-                since = int(start_time.timestamp() * 1000)
-                ohlcv = exchange.fetch_ohlcv(symbol, timeframe, since=since, limit=limit)
-            else:
-                ohlcv = exchange.fetch_ohlcv(symbol, timeframe, limit=limit)
+                else:
+                    ohlcv = exchange.fetch_ohlcv(symbol, timeframe, limit=limit)
         
         if not ohlcv:
             raise ValueError(f"No data returned for symbol {symbol}")
@@ -333,6 +399,7 @@ def fetch_market_data(
         symbol: 交易对符号
         data_source: 数据源 ('yahoo', 'binance')
         **kwargs: 传递给具体数据源的参数
+            - 对于Binance: 支持 months 参数来获取指定月数的数据
     
     Returns:
         包含 OHLCV 数据的 DataFrame
@@ -343,6 +410,9 @@ def fetch_market_data(
         
         # 从 Binance 获取数据
         df = fetch_market_data('BTC/USDT', data_source='binance', timeframe='1h', limit=1000)
+        
+        # 从 Binance 获取6个月数据（用于回测）
+        df = fetch_market_data('BTC/USDT', data_source='binance', timeframe='1h', months=6)
     """
     if data_source.lower() == 'yahoo':
         return fetch_yahoo_data(symbol, **kwargs)

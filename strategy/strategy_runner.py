@@ -27,7 +27,7 @@ def build_feature_packet(df, idx):
         packet['higher_lows'] = (window.min() > df['close'].iloc[max(0, idx-40):idx+1].mean())
     return packet
 
-def run_strategy(df, use_llm=USE_LLM, use_advanced_ta=True, use_eric_indicators=False, lookback_days=7):
+def run_strategy(df, use_llm=USE_LLM, use_advanced_ta=True, use_eric_indicators=False, lookback_days=None):
     """
     运行完整的策略流程
     
@@ -36,7 +36,7 @@ def run_strategy(df, use_llm=USE_LLM, use_advanced_ta=True, use_eric_indicators=
         use_llm: 是否使用 LLM 分析
         use_advanced_ta: 是否使用高级技术指标
         use_eric_indicators: 是否使用 Eric 指标
-        lookback_days: 倒推天数（默认7天，即1周）
+        lookback_days: 倒推天数（None表示分析全部数据，用于回测）
     
     Returns:
         (df, enhanced_signals): 增强后的 DataFrame 和信号列表
@@ -44,8 +44,12 @@ def run_strategy(df, use_llm=USE_LLM, use_advanced_ta=True, use_eric_indicators=
     import pandas as pd
     from datetime import datetime, timedelta
     
-    # 如果数据有时间索引，计算倒推时间点
-    if isinstance(df.index, pd.DatetimeIndex) and len(df) > 0:
+    # 如果lookback_days为None，分析全部数据（用于回测）
+    if lookback_days is None:
+        logger.info(f"分析全部数据（共 {len(df)} 条），用于回测")
+        df_analysis = df.copy()
+        lookback_idx = 0
+    elif isinstance(df.index, pd.DatetimeIndex) and len(df) > 0:
         # 计算倒推时间点（从最新数据往前推）
         latest_time = df.index[-1]
         lookback_time = latest_time - timedelta(days=lookback_days)
@@ -124,9 +128,24 @@ def run_strategy(df, use_llm=USE_LLM, use_advanced_ta=True, use_eric_indicators=
                     max_tokens=OPENAI_MAX_TOKENS
                 )
             except Exception as e:
-                logger.warning(f"LLM interpretation failed for signal {global_idx+1}/{len(signals)}: {e}")
-                # 使用 fallback
-                llm_out = interpret_with_llm(packet, provider=LLM_PROVIDER, model=model, use_llm=False)
+                # 记录详细错误信息，但使用fallback继续处理
+                error_msg = str(e)
+                error_type = type(e).__name__
+                logger.warning(f"LLM interpretation failed for signal {global_idx+1}/{len(signals)}: {error_type}: {error_msg}")
+                # 使用 fallback（这会返回一个基本的启发式结果，不会再次抛出异常）
+                try:
+                    llm_out = interpret_with_llm(packet, provider=LLM_PROVIDER, model=model, use_llm=False)
+                except Exception as fallback_error:
+                    # 如果连fallback都失败，创建一个默认结果
+                    logger.error(f"Fallback also failed for signal {global_idx+1}: {fallback_error}")
+                    llm_out = {
+                        'trend_structure': 'Neutral',
+                        'signal': 'Neutral',
+                        'score': 0,
+                        'confidence': 'Low',
+                        'explanation': 'Error in LLM interpretation',
+                        'risk': 'Unknown'
+                    }
             
             # 添加时间戳（信号产生时间）
             signal_time = None

@@ -22,7 +22,7 @@ USE_ERIC_INDICATORS = os.getenv('USE_ERIC_INDICATORS', 'True').lower() == 'true'
 USE_LLM = os.getenv('USE_LLM', 'True').lower() == 'true'  # 是否启用 LLM 分析
 LLM_PROVIDER = os.getenv('LLM_PROVIDER', 'openai')  # LLM 提供商: 'openai' 或 'deepseek'
 OPENAI_MODEL = os.getenv('OPENAI_MODEL', 'gpt-4o-mini')  # OpenAI 模型（如 'gpt-4o-mini', 'gpt-4o'）
-DEEPSEEK_MODEL = os.getenv('DEEPSEEK_MODEL', 'deepseek-chat')  # DeepSeek 模型（如 'deepseek-chat', 'deepseek-reasoner'）
+DEEPSEEK_MODEL = os.getenv('DEEPSEEK_MODEL', 'deepseek-reasoner')  # DeepSeek 模型（如 'deepseek-chat', 'deepseek-reasoner'）
 OPENAI_TEMPERATURE = float(os.getenv('OPENAI_TEMPERATURE', '0.0'))  # LLM 温度参数
 OPENAI_MAX_TOKENS = int(os.getenv('OPENAI_MAX_TOKENS', '400'))  # LLM 最大token数
 

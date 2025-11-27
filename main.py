@@ -91,13 +91,29 @@ def main():
             
         elif DATA_SOURCE == 'binance':
             logger.info(f"从 Binance 获取 {MARKET_SYMBOL} 的数据...")
-            df = fetch_market_data(
-                symbol=MARKET_SYMBOL,
-                data_source='binance',
-                timeframe=MARKET_TIMEFRAME,
-                limit=MARKET_LIMIT
-            )
+            # 检查是否需要获取6个月数据（用于回测）
+            backtest_months = int(os.getenv('BACKTEST_MONTHS', '0'))  # 0表示使用默认limit
+            if backtest_months > 0:
+                logger.info(f"回测模式：获取 {backtest_months} 个月的数据...")
+                from data.market_data import fetch_binance_data
+                df = fetch_binance_data(
+                    symbol=MARKET_SYMBOL,
+                    timeframe=MARKET_TIMEFRAME,
+                    months=backtest_months
+                )
+            else:
+                df = fetch_market_data(
+                    symbol=MARKET_SYMBOL,
+                    data_source='binance',
+                    timeframe=MARKET_TIMEFRAME,
+                    limit=MARKET_LIMIT
+                )
             logger.info(f"已从 Binance 获取 {len(df)} 行数据")
+            
+            # 验证数据时间范围
+            if isinstance(df.index, pd.DatetimeIndex) and len(df) > 0:
+                time_span = (df.index[-1] - df.index[0]).days
+                logger.info(f"数据时间跨度: {time_span} 天（约 {time_span/30:.1f} 个月）")
             
         else:  # synthetic
             logger.info(f"生成合成数据 (大小={SYNTHETIC_DATA_SIZE})...")
@@ -109,7 +125,20 @@ def main():
         logger.info("开始多时间周期综合分析")
         logger.info("=" * 60)
         
-        use_multi_timeframe = os.getenv('USE_MULTI_TIMEFRAME', 'True').lower() == 'true'
+        # 检查是否为回测模式（需要至少6个月数据和200+交易）
+        backtest_mode = os.getenv('BACKTEST_MODE', 'False').lower() == 'true'
+        backtest_months = int(os.getenv('BACKTEST_MONTHS', '0'))
+        
+        # 如果设置了BACKTEST_MONTHS，自动启用回测模式
+        if backtest_months > 0:
+            backtest_mode = True
+            logger.info(f"回测模式：目标 {backtest_months} 个月数据，至少 200+ 笔交易")
+            # 回测模式下禁用多时间周期分析（会产生更多信号）
+            use_multi_timeframe = False
+            logger.info("回测模式：禁用多时间周期分析，使用单时间周期以产生更多交易信号")
+        else:
+            use_multi_timeframe = os.getenv('USE_MULTI_TIMEFRAME', 'True').lower() == 'true'
+        
         min_timeframe_confirmations = int(os.getenv('MIN_TIMEFRAME_CONFIRMATIONS', '2'))
         
         if use_multi_timeframe and DATA_SOURCE in ['binance', 'yahoo']:
@@ -160,8 +189,21 @@ def main():
                                 max_tokens=OPENAI_MAX_TOKENS
                             )
                         except Exception as e:
-                            logger.warning(f"LLM分析失败: {e}，使用fallback")
-                            llm_out = interpret_with_llm(packet, provider=LLM_PROVIDER, model=model, use_llm=False)
+                            error_msg = str(e)
+                            error_type = type(e).__name__
+                            logger.warning(f"LLM分析失败: {error_type}: {error_msg}，使用fallback")
+                            try:
+                                llm_out = interpret_with_llm(packet, provider=LLM_PROVIDER, model=model, use_llm=False)
+                            except Exception as fallback_error:
+                                logger.error(f"Fallback也失败: {fallback_error}")
+                                llm_out = {
+                                    'trend_structure': 'Neutral',
+                                    'signal': 'Neutral',
+                                    'score': 0,
+                                    'confidence': 'Low',
+                                    'explanation': 'Error in LLM interpretation',
+                                    'risk': 'Unknown'
+                                }
                         
                         # 添加时间戳
                         signal_time = None
@@ -185,17 +227,24 @@ def main():
             else:
                 logger.warning("多时间周期分析未找到确认信号，使用单时间周期分析")
                 # 回退到单时间周期分析
+                lookback_days_for_strategy = None if backtest_mode else SIGNAL_LOOKBACK_DAYS
                 df, enhanced = run_strategy(df, use_llm=USE_LLM, use_advanced_ta=USE_ADVANCED_TA, 
-                                           use_eric_indicators=USE_ERIC_INDICATORS, lookback_days=SIGNAL_LOOKBACK_DAYS)
+                                           use_eric_indicators=USE_ERIC_INDICATORS, lookback_days=lookback_days_for_strategy)
         else:
             # 单时间周期分析（原有逻辑）
             logger.info(f"运行单时间周期策略 (使用LLM={USE_LLM}, 使用高级指标={USE_ADVANCED_TA}, 使用Eric指标={USE_ERIC_INDICATORS})...")
+            # 回测模式：分析全部数据；正常模式：只分析最近N天
+            lookback_days_for_strategy = None if backtest_mode else SIGNAL_LOOKBACK_DAYS
             df, enhanced = run_strategy(df, use_llm=USE_LLM, use_advanced_ta=USE_ADVANCED_TA, 
-                                       use_eric_indicators=USE_ERIC_INDICATORS, lookback_days=SIGNAL_LOOKBACK_DAYS)
+                                       use_eric_indicators=USE_ERIC_INDICATORS, lookback_days=lookback_days_for_strategy)
         
-        logger.info(f"检测到 {len(enhanced)} 个信号（最近 {SIGNAL_LOOKBACK_DAYS} 天内）")
+        if backtest_mode:
+            logger.info(f"检测到 {len(enhanced)} 个信号（全量数据回测）")
+        else:
+            logger.info(f"检测到 {len(enhanced)} 个信号（最近 {SIGNAL_LOOKBACK_DAYS} 天内）")
         
         # 2.5. 应用信号过滤器（提升胜率）
+        # 回测模式下，降低阈值以产生更多交易
         if USE_SIGNAL_FILTER:
             from strategy.signal_filter import apply_signal_filters
             # 使用交易模式配置的参数（如果已应用）
@@ -203,11 +252,20 @@ def main():
             data_interval = MARKET_INTERVAL if DATA_SOURCE in ['yahoo', 'csv'] else MARKET_TIMEFRAME
             mode_config = get_trading_mode_config(TRADING_MODE, data_interval)
             
-            # 使用交易模式配置的参数，但允许环境变量覆盖
-            min_quality = int(os.getenv('MIN_QUALITY_SCORE', mode_config['min_quality_score']))
-            min_conf = int(os.getenv('MIN_CONFIRMATIONS', mode_config['min_confirmations']))
-            min_rr = float(os.getenv('MIN_RISK_REWARD', mode_config['min_risk_reward']))
-            min_llm = int(os.getenv('MIN_LLM_SCORE', mode_config['min_llm_score']))
+            # 回测模式下，降低阈值以产生更多交易
+            if backtest_mode:
+                logger.info("回测模式：降低过滤阈值以产生更多交易信号")
+                # 使用更宽松的阈值
+                min_quality = int(os.getenv('MIN_QUALITY_SCORE', '30'))  # 降低到30
+                min_conf = int(os.getenv('MIN_CONFIRMATIONS', '1'))  # 降低到1
+                min_rr = float(os.getenv('MIN_RISK_REWARD', '1.2'))  # 降低到1.2
+                min_llm = int(os.getenv('MIN_LLM_SCORE', '30'))  # 降低到30
+            else:
+                # 使用交易模式配置的参数，但允许环境变量覆盖
+                min_quality = int(os.getenv('MIN_QUALITY_SCORE', mode_config['min_quality_score']))
+                min_conf = int(os.getenv('MIN_CONFIRMATIONS', mode_config['min_confirmations']))
+                min_rr = float(os.getenv('MIN_RISK_REWARD', mode_config['min_risk_reward']))
+                min_llm = int(os.getenv('MIN_LLM_SCORE', mode_config['min_llm_score']))
             
             enhanced = apply_signal_filters(
                 df, enhanced,
@@ -217,6 +275,14 @@ def main():
                 min_llm_score=min_llm
             )
             logger.info(f"信号过滤后剩余 {len(enhanced)} 个高质量信号")
+            
+            # 回测模式：检查是否达到目标交易数量
+            if backtest_mode and len(enhanced) < 200:
+                logger.warning(f"⚠️ 当前只有 {len(enhanced)} 个信号，未达到 200+ 的目标")
+                logger.warning("建议进一步降低阈值：")
+                logger.warning(f"  MIN_QUALITY_SCORE={max(20, min_quality-10)}")
+                logger.warning(f"  MIN_LLM_SCORE={max(20, min_llm-10)}")
+                logger.warning(f"  MIN_RISK_REWARD={max(1.0, min_rr-0.1):.1f}")
         
         # 3. 为确认的信号查找3分钟周期最佳入场点
         logger.info("为确认的信号查找3分钟周期最佳入场点...")
@@ -382,6 +448,25 @@ def main():
         for k, v in metrics.items():
             logger.info(format_metric_value(k, v))
         logger.info("=" * 60)
+        
+        # 回测模式：验证是否达到目标
+        if backtest_mode:
+            total_trades = metrics.get('total_trades', 0)
+            if isinstance(df.index, pd.DatetimeIndex) and len(df) > 0:
+                time_span_days = (df.index[-1] - df.index[0]).days
+                time_span_months = time_span_days / 30
+            else:
+                time_span_months = 0
+            
+            logger.info("=" * 60)
+            logger.info("回测目标验证:")
+            logger.info(f"  数据时间跨度: {time_span_months:.1f} 个月 {'✅' if time_span_months >= 6 else '❌'}")
+            logger.info(f"  交易数量: {total_trades} 笔 {'✅' if total_trades >= 200 else '❌'}")
+            if time_span_months < 6:
+                logger.warning(f"  ⚠️ 数据时间跨度不足6个月，建议设置 BACKTEST_MONTHS=6")
+            if total_trades < 200:
+                logger.warning(f"  ⚠️ 交易数量不足200笔，建议进一步降低过滤阈值")
+            logger.info("=" * 60)
         
         # 输出每笔交易的详细信息
         if not trades_df.empty:

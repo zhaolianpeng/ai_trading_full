@@ -48,14 +48,80 @@ def interpret_with_llm(feature_packet, provider='openai', model='gpt-4o-mini',
         logger.warning(f"LLM call failed: {e}, using fallback")
         return interpret_with_llm(feature_packet, provider=provider, model=model, use_llm=False)
     # 尝试把 LLM 返回解析为 JSON
+    parsed = None
+    json_error = None
+    
+    # 方法1: 直接解析
     try:
         parsed = json.loads(txt.strip())
-    except Exception:
-        import re
-        m = re.search(r'\{.*\}', txt, re.S)
-        if m:
-            parsed = json.loads(m.group(0))
-        else:
-            # fallback
-            parsed = interpret_with_llm(feature_packet, provider=provider, model=model, use_llm=False)
+    except json.JSONDecodeError as e:
+        json_error = str(e)
+        logger.debug(f"直接JSON解析失败: {e}")
+        
+        # 方法2: 清理文本后解析（移除可能的markdown代码块标记）
+        try:
+            cleaned = txt.strip()
+            # 移除可能的 ```json 和 ``` 标记
+            if cleaned.startswith('```'):
+                lines = cleaned.split('\n')
+                if lines[0].startswith('```'):
+                    lines = lines[1:]
+                if lines and lines[-1].strip() == '```':
+                    lines = lines[:-1]
+                cleaned = '\n'.join(lines)
+            
+            # 尝试解析清理后的文本
+            parsed = json.loads(cleaned)
+        except json.JSONDecodeError as e2:
+            logger.debug(f"清理后JSON解析失败: {e2}")
+            
+            # 方法3: 使用正则表达式提取JSON对象
+            try:
+                import re
+                # 匹配最外层的JSON对象（支持嵌套）
+                pattern = r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}'
+                matches = re.findall(pattern, txt, re.DOTALL)
+                if matches:
+                    # 尝试解析最长的匹配
+                    longest_match = max(matches, key=len)
+                    try:
+                        parsed = json.loads(longest_match)
+                    except json.JSONDecodeError:
+                        # 如果最长匹配失败，尝试所有匹配
+                        for match in sorted(matches, key=len, reverse=True):
+                            try:
+                                parsed = json.loads(match)
+                                break
+                            except json.JSONDecodeError:
+                                continue
+                else:
+                    # 尝试匹配更宽松的模式
+                    pattern2 = r'\{.*\}'
+                    m = re.search(pattern2, txt, re.DOTALL)
+                    if m:
+                        try:
+                            # 尝试修复常见的JSON问题
+                            json_str = m.group(0)
+                            # 移除尾随逗号
+                            json_str = re.sub(r',\s*}', '}', json_str)
+                            json_str = re.sub(r',\s*]', ']', json_str)
+                            # 将单引号替换为双引号（仅在字符串值中，但要小心处理转义）
+                            # 先处理没有转义的单引号字符串
+                            json_str = re.sub(r"(?<!\\)'([^']*)'(?=\s*:)", r'"\1"', json_str)
+                            json_str = re.sub(r"(?<!\\)'([^']*)'(?=\s*[,}])", r'"\1"', json_str)
+                            parsed = json.loads(json_str)
+                        except json.JSONDecodeError as e4:
+                            logger.debug(f"JSON修复后仍解析失败: {e4}")
+                            json_error = str(e4)
+            except Exception as e3:
+                logger.debug(f"正则提取JSON失败: {e3}")
+                if not json_error:
+                    json_error = str(e3)
+    
+    # 如果所有方法都失败，使用fallback
+    if parsed is None:
+        logger.warning(f"LLM返回的JSON解析失败: {json_error}, 原始文本前200字符: {txt[:200]}")
+        logger.warning(f"使用fallback启发式方法")
+        parsed = interpret_with_llm(feature_packet, provider=provider, model=model, use_llm=False)
+    
     return parsed
