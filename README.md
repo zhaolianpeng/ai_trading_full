@@ -1,6 +1,6 @@
 # AI Trading System — LLM + Quant (Enhanced)
 
-一个结合传统量化分析与大语言模型（LLM）的智能交易系统演示项目。
+一个结合传统量化分析与大语言模型（LLM）的智能交易系统。
 
 ## ✨ 主要功能
 
