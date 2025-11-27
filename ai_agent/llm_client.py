@@ -91,17 +91,20 @@ def call_openai_chat(prompt: str, model: str = 'gpt-4o-mini',
                 logger.error(f"OpenAI API call failed after {retry_count} attempts: {e}")
                 raise
 
-def call_deepseek_chat(prompt: str, model: str = 'deepseek-chat', 
+def call_deepseek_chat(prompt: str, model: str = 'deepseek-reasoner', 
                       temperature: float = 0.0, max_tokens: int = 400,
                       retry_count: int = 3) -> str:
     """
     调用 DeepSeek ChatCompletion API（使用 OpenAI 兼容接口）
     
+    默认使用 deepseek-reasoner 推理模型，适合复杂分析场景。
+    
     Args:
         prompt: 提示词
-        model: 模型名称（如 'deepseek-chat', 'deepseek-reasoner'）
+        model: 模型名称（默认 'deepseek-reasoner'，推理模型；也可使用 'deepseek-chat'）
         temperature: 温度参数（0-2）
         max_tokens: 最大token数
+        retry_count: 重试次数（默认3次）
     
     Returns:
         LLM 返回的文本内容
@@ -143,12 +146,16 @@ def ask_llm(prompt: str, provider: str = 'openai', model: str = 'gpt-4o-mini',
         provider: 提供商（支持 'openai' 或 'deepseek'）
         model: 模型名称
             - OpenAI: 'gpt-4o-mini', 'gpt-4o', 'gpt-3.5-turbo' 等
-            - DeepSeek: 'deepseek-chat', 'deepseek-reasoner' 等
-        temperature: 温度参数
-        max_tokens: 最大token数
+            - DeepSeek: 'deepseek-reasoner'（默认，推理模型）、'deepseek-chat' 等
+        temperature: 温度参数（0-2，默认0.0）
+        max_tokens: 最大token数（默认400）
     
     Returns:
         LLM 返回的文本内容
+    
+    Note:
+        DeepSeek 默认使用 'deepseek-reasoner' 推理模型，适合复杂分析场景。
+        可通过 config.py 中的 DEEPSEEK_MODEL 配置项修改。
     """
     if provider == 'openai':
         return call_openai_chat(prompt, model=model, temperature=temperature, max_tokens=max_tokens)
