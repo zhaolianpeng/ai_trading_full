@@ -148,6 +148,7 @@ ai_trading_full/
 │   ├── signal_filter.py   # 信号过滤器（质量评分、强制过滤）
 │   ├── signal_scorer.py   # 信号评分系统（多因子打分）
 │   ├── ml_filter.py       # ML过滤器（RandomForest/LogisticRegression）
+│   ├── high_frequency_strategy.py  # 高频交易策略（多时间周期超买/超卖+小周期反向交易）
 │   ├── multi_timeframe_analyzer.py  # 多时间周期分析
 │   └── market_structure_analyzer.py  # 市场结构分析
 ├── ai_agent/
@@ -234,6 +235,12 @@ ai_trading_full/
 ### 多时间周期配置
 - `USE_MULTI_TIMEFRAME`: 是否使用多时间周期分析（True/False，默认 True）
 - `MIN_TIMEFRAME_CONFIRMATIONS`: 多时间周期最小确认数（默认 2）
+
+### 高频交易配置
+- `USE_HIGH_FREQUENCY`: 是否启用高频交易策略（True/False，默认 True）
+- `HF_MIN_CONSECUTIVE_OVERBOUGHT`: 最小连续超买次数（日线/4小时，默认 3）
+- `HF_MIN_CONSECUTIVE_OVERSOLD`: 最小连续超卖次数（日线/4小时，默认 3）
+- `ALLOW_MULTIPLE_TRADES_PER_DAY`: 是否允许一天多次交易（True/False，默认 True）
 
 ### 日志配置
 - `LOG_LEVEL`: 日志级别（DEBUG/INFO/WARNING/ERROR）
@@ -596,6 +603,58 @@ if 盈亏比 < 1.5:
 - 虽然函数名为 `find_best_entry_point_3m`，但实际优先使用5分钟数据
 - 5分钟数据在所有Binance市场都稳定支持，避免了3分钟在某些市场的不稳定性
 
+## 🚀 高频交易策略
+
+系统实现了基于多时间周期超买/超卖判断的高频交易策略，专门用于增加交易信号数量：
+
+### 策略逻辑
+
+1. **大周期超买判断**：
+   - 日线或4小时线连续3根（可配置）K线处于超买状态（RSI >= 70）
+   - 触发条件：寻找反向做空机会
+
+2. **大周期超卖判断**：
+   - 日线或4小时线连续3根（可配置）K线处于超卖状态（RSI <= 30）
+   - 触发条件：寻找反向做多机会
+
+3. **小周期入场**：
+   - **1小时线**：寻找趋势确认的入场点
+     - 做空：EMA空头排列、RSI高位或回落、负动量、成交量放大
+     - 做多：EMA多头排列、RSI低位或反弹、正动量、成交量放大
+   - **5分钟线**：优化入场点
+     - 做空：寻找价格反弹点（0-2%反弹最佳）
+     - 做多：寻找价格回调点（0-2%回调最佳）
+
+4. **高频交易特性**：
+   - **一天多次交易**：允许同一天内多次开仓（如果趋势允许）
+   - **避免重叠持仓**：确保不会同时持有重叠的仓位
+   - **分钟级短单**：持仓周期较短，适合快速进出
+
+### 使用示例
+
+```bash
+# 启用高频交易策略（默认启用）
+USE_HIGH_FREQUENCY=True \
+HF_MIN_CONSECUTIVE_OVERBOUGHT=3 \
+HF_MIN_CONSECUTIVE_OVERSOLD=3 \
+ALLOW_MULTIPLE_TRADES_PER_DAY=True \
+python3 main.py
+```
+
+### 配置参数
+
+- `USE_HIGH_FREQUENCY`: 是否启用高频交易策略（默认 True）
+- `HF_MIN_CONSECUTIVE_OVERBOUGHT`: 最小连续超买次数（默认 3）
+- `HF_MIN_CONSECUTIVE_OVERSOLD`: 最小连续超卖次数（默认 3）
+- `ALLOW_MULTIPLE_TRADES_PER_DAY`: 是否允许一天多次交易（默认 True）
+
+### 优势
+
+- **增加交易信号**：从大周期的超买/超卖状态中寻找更多交易机会
+- **反向交易**：利用大周期超买/超卖的反转机会
+- **多时间周期确认**：大周期判断 + 小周期入场，提高信号质量
+- **高频短单**：适合快速进出，增加交易频率
+
 ## 🎯 Eric 全面策略指标
 
 项目集成了完整的 Eric 全面策略指标体系，参考 TradingView 专业策略：
@@ -728,6 +787,7 @@ LLM 会基于这些完整的指标数据做出更准确的交易决策。
 - ✅ **多因子信号评分**：trend_score、momentum_score、vol_score、volume_score等
 - ✅ **风险管理器**：持仓限制、每日最大亏损、手续费/滑点计算
 - ✅ **监控/日志系统**：记录ML得分、后验PnL，支持持续学习
+- ✅ **高频交易策略**：基于多时间周期超买/超卖判断，在小周期寻找反向交易机会，支持一天多次交易
 
 ## 📝 注意事项
 
@@ -750,6 +810,15 @@ LLM 会基于这些完整的指标数据做出更准确的交易决策。
 - 配置参数
 
 ## 🔄 更新日志
+
+### v4.1 (High Frequency Trading)
+- ✨ **高频交易策略**：实现基于多时间周期超买/超卖判断的高频交易策略
+  - 日线/4小时线连续超买 -> 小时线/5分钟线做空
+  - 日线/4小时线连续超卖 -> 小时线/5分钟线做多
+  - 支持一天多次交易（如果趋势允许）
+  - 分钟级高频短单，快速进出
+- ✨ **做空交易支持**：回测系统支持做空交易（止损在上方，止盈在下方）
+- ✨ **高频交易模式**：允许一天多次交易，避免重叠持仓
 
 ### v4.0 (Complete Quant Architecture)
 - ✨ **ML过滤器**：实现监督学习模型（RandomForest/LogisticRegression）筛选信号

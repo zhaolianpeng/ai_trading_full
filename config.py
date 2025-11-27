@@ -45,6 +45,22 @@ TRADING_MODE = os.getenv('TRADING_MODE', 'normal')  # 交易模式: 'normal', 's
 # swing: 波段交易，提高阈值，适合日线级
 # normal: 标准模式
 
+# ==================== 高频交易配置 ====================
+USE_HIGH_FREQUENCY = os.getenv('USE_HIGH_FREQUENCY', 'True').lower() == 'true'  # 是否启用高频交易策略
+HF_MIN_CONSECUTIVE_OVERBOUGHT = int(os.getenv('HF_MIN_CONSECUTIVE_OVERBOUGHT', '3'))  # 最小连续超买次数（日线/4小时）
+HF_MIN_CONSECUTIVE_OVERSOLD = int(os.getenv('HF_MIN_CONSECUTIVE_OVERSOLD', '3'))  # 最小连续超卖次数（日线/4小时）
+ALLOW_MULTIPLE_TRADES_PER_DAY = os.getenv('ALLOW_MULTIPLE_TRADES_PER_DAY', 'True').lower() == 'true'  # 是否允许一天多次交易
+
+# ==================== 合约交易配置 ====================
+FUTURES_LEVERAGE = int(os.getenv('FUTURES_LEVERAGE', '3'))  # 杠杆倍数（默认3倍，建议1-10倍）
+FUTURES_RISK_PER_TRADE = float(os.getenv('FUTURES_RISK_PER_TRADE', '0.02'))  # 每笔交易风险比例（默认2%）
+FUTURES_MARGIN_RATE = float(os.getenv('FUTURES_MARGIN_RATE', '0.01'))  # 保证金率（默认1%，即100倍杠杆需要1%保证金）
+FUTURES_MAINTENANCE_MARGIN_RATE = float(os.getenv('FUTURES_MAINTENANCE_MARGIN_RATE', '0.5'))  # 维持保证金率（默认50%）
+FUTURES_MIN_STOP_PCT = float(os.getenv('FUTURES_MIN_STOP_PCT', '0.005'))  # 最小止损百分比（默认0.5%）
+FUTURES_MAX_STOP_PCT = float(os.getenv('FUTURES_MAX_STOP_PCT', '0.05'))  # 最大止损百分比（默认5%）
+FUTURES_MAX_PROFIT_PCT = float(os.getenv('FUTURES_MAX_PROFIT_PCT', '0.20'))  # 最大止盈百分比（默认20%）
+FUTURES_USE_ENHANCED_STRATEGY = os.getenv('FUTURES_USE_ENHANCED_STRATEGY', 'True').lower() == 'true'  # 是否使用增强的合约交易策略
+
 # ==================== 日志配置 ====================
 LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO')  # DEBUG, INFO, WARNING, ERROR
 LOG_FILE = os.getenv('LOG_FILE', 'trading.log')  # 日志文件路径，None 表示不写入文件

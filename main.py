@@ -297,10 +297,211 @@ def main():
             df, enhanced = run_strategy(df, use_llm=USE_LLM, use_advanced_ta=USE_ADVANCED_TA, 
                                        use_eric_indicators=USE_ERIC_INDICATORS, lookback_days=lookback_days_for_strategy)
         
+        # 2.5. 高频交易策略（如果启用）
+        use_high_frequency = os.getenv('USE_HIGH_FREQUENCY', 'True').lower() == 'true'
+        if use_high_frequency and DATA_SOURCE in ['binance', 'yahoo'] and not backtest_mode:
+            logger.info("=" * 60)
+            logger.info("开始高频交易策略分析")
+            logger.info("=" * 60)
+            
+            from strategy.high_frequency_strategy import detect_high_frequency_signals, enhance_with_5m_entry
+            from data.market_data import fetch_market_data, fetch_binance_data
+            
+            # 获取多时间周期数据
+            df_daily = None
+            df_4h = None
+            df_1h = df.copy()  # 使用当前1小时数据
+            df_5m = None
+            
+            try:
+                # 获取日线数据
+                if DATA_SOURCE == 'binance':
+                    df_daily = fetch_binance_data(
+                        symbol=MARKET_SYMBOL,
+                        timeframe='1d',
+                        limit=100,
+                        market_type=MARKET_TYPE
+                    )
+                    # 获取4小时数据
+                    df_4h = fetch_binance_data(
+                        symbol=MARKET_SYMBOL,
+                        timeframe='4h',
+                        limit=200,
+                        market_type=MARKET_TYPE
+                    )
+                    # 获取5分钟数据（用于优化入场点）
+                    df_5m = fetch_binance_data(
+                        symbol=MARKET_SYMBOL,
+                        timeframe='5m',
+                        limit=500,
+                        market_type=MARKET_TYPE
+                    )
+                elif DATA_SOURCE == 'yahoo':
+                    # Yahoo Finance 数据
+                    df_daily = fetch_market_data(
+                        symbol=MARKET_SYMBOL,
+                        data_source='yahoo',
+                        period='6mo',
+                        interval='1d'
+                    )
+                    df_4h = fetch_market_data(
+                        symbol=MARKET_SYMBOL,
+                        data_source='yahoo',
+                        period='3mo',
+                        interval='4h'
+                    )
+                    # Yahoo Finance 最小支持5分钟
+                    df_5m = fetch_market_data(
+                        symbol=MARKET_SYMBOL,
+                        data_source='yahoo',
+                        period='5d',
+                        interval='5m'
+                    )
+                
+                # 确保数据有必要的指标
+                from features.ta_basic import add_basic_ta
+                if df_daily is not None and len(df_daily) > 0:
+                    df_daily = add_basic_ta(df_daily)
+                if df_4h is not None and len(df_4h) > 0:
+                    df_4h = add_basic_ta(df_4h)
+                if df_1h is not None and len(df_1h) > 0:
+                    df_1h = add_basic_ta(df_1h)
+                if df_5m is not None and len(df_5m) > 0:
+                    df_5m = add_basic_ta(df_5m)
+                
+                # 检测高频交易信号
+                min_consecutive_overbought = int(os.getenv('HF_MIN_CONSECUTIVE_OVERBOUGHT', '3'))
+                min_consecutive_oversold = int(os.getenv('HF_MIN_CONSECUTIVE_OVERSOLD', '3'))
+                
+                hf_signals = detect_high_frequency_signals(
+                    df_daily=df_daily,
+                    df_4h=df_4h,
+                    df_1h=df_1h,
+                    min_consecutive_overbought=min_consecutive_overbought,
+                    min_consecutive_oversold=min_consecutive_oversold
+                )
+                
+                if hf_signals:
+                    logger.info(f"高频交易策略找到 {len(hf_signals)} 个信号")
+                    
+                    # 使用5分钟线优化入场点
+                    enhanced_hf_signals = []
+                    for signal in hf_signals:
+                        enhanced_signal = enhance_with_5m_entry(signal, df_5m)
+                        
+                        # 转换为标准格式
+                        from strategy.strategy_runner import build_feature_packet
+                        from ai_agent.signal_interpret import interpret_with_llm
+                        
+                        entry_idx = enhanced_signal.get('entry_idx', -1)
+                        if entry_idx >= 0 and entry_idx < len(df_1h):
+                            packet = build_feature_packet(df_1h, entry_idx)
+                            
+                            # LLM分析（可选）
+                            if USE_LLM:
+                                try:
+                                    llm_out = interpret_with_llm(
+                                        packet,
+                                        provider=LLM_PROVIDER,
+                                        model=DEEPSEEK_MODEL if LLM_PROVIDER == 'deepseek' else OPENAI_MODEL,
+                                        use_llm=USE_LLM,
+                                        temperature=OPENAI_TEMPERATURE,
+                                        max_tokens=OPENAI_MAX_TOKENS
+                                    )
+                                except:
+                                    llm_out = {
+                                        'trend_structure': 'Neutral',
+                                        'signal': enhanced_signal['direction'],
+                                        'score': enhanced_signal.get('score', 50),
+                                        'confidence': 'Medium',
+                                        'explanation': f"高频交易信号: {', '.join(enhanced_signal.get('reasons', []))}",
+                                        'risk': []
+                                    }
+                            else:
+                                llm_out = {
+                                    'trend_structure': 'Neutral',
+                                    'signal': enhanced_signal['direction'],
+                                    'score': enhanced_signal.get('score', 50),
+                                    'confidence': 'Medium',
+                                    'explanation': f"高频交易信号: {', '.join(enhanced_signal.get('reasons', []))}",
+                                    'risk': []
+                                }
+                            
+                            # 构建标准信号格式
+                            standard_signal = {
+                                'rule': {
+                                    'type': 'high_frequency',
+                                    'idx': entry_idx,
+                                    'score': enhanced_signal.get('score', 50),
+                                    'confidence': 'high'
+                                },
+                                'feature_packet': packet,
+                                'llm': llm_out,
+                                'signal_time': enhanced_signal.get('entry_time').isoformat() if enhanced_signal.get('entry_time') else None,
+                                'structure_label': enhanced_signal.get('higher_timeframe_signal', {}).get('signal_type', 'HIGH_FREQ'),
+                                'hf_signal': enhanced_signal  # 保留高频信号原始信息
+                            }
+                            
+                            enhanced_hf_signals.append(standard_signal)
+                    
+                    # 合并到主信号列表
+                    if enhanced:
+                        enhanced.extend(enhanced_hf_signals)
+                    else:
+                        enhanced = enhanced_hf_signals
+                    
+                    logger.info(f"已添加 {len(enhanced_hf_signals)} 个高频交易信号，总信号数: {len(enhanced)}")
+                else:
+                    logger.info("高频交易策略未找到信号")
+                    
+            except Exception as e:
+                logger.warning(f"高频交易策略执行失败: {e}，继续使用原有信号")
+                import traceback
+                logger.debug(traceback.format_exc())
+        
         if backtest_mode:
             logger.info(f"检测到 {len(enhanced)} 个信号（全量数据回测）")
         else:
             logger.info(f"检测到 {len(enhanced)} 个信号（最近 {SIGNAL_LOOKBACK_DAYS} 天内）")
+        
+        # 2.4. 合约交易策略增强（如果启用）
+        if os.getenv('FUTURES_USE_ENHANCED_STRATEGY', 'True').lower() == 'true' and MARKET_TYPE == 'future':
+            logger.info("=" * 60)
+            logger.info("应用合约交易策略增强")
+            logger.info("=" * 60)
+            
+            from strategy.futures_strategy import enhance_long_signal_for_futures, enhance_short_signal_for_futures
+            from config import FUTURES_LEVERAGE, FUTURES_RISK_PER_TRADE
+            
+            enhanced_with_futures = []
+            for signal in enhanced:
+                rule = signal.get('rule', {})
+                signal_idx = rule.get('idx', -1)
+                llm = signal.get('llm', {})
+                signal_direction = llm.get('signal', 'Neutral')
+                
+                if signal_idx >= 0 and signal_idx < len(df):
+                    if signal_direction == 'Long':
+                        enhanced_signal = enhance_long_signal_for_futures(
+                            signal, df, signal_idx,
+                            leverage=FUTURES_LEVERAGE,
+                            risk_per_trade=FUTURES_RISK_PER_TRADE
+                        )
+                    elif signal_direction == 'Short':
+                        enhanced_signal = enhance_short_signal_for_futures(
+                            signal, df, signal_idx,
+                            leverage=FUTURES_LEVERAGE,
+                            risk_per_trade=FUTURES_RISK_PER_TRADE
+                        )
+                    else:
+                        enhanced_signal = signal
+                    
+                    enhanced_with_futures.append(enhanced_signal)
+                else:
+                    enhanced_with_futures.append(signal)
+            
+            enhanced = enhanced_with_futures
+            logger.info(f"已为 {len(enhanced)} 个信号应用合约交易策略增强")
         
         # 2.5. 应用信号过滤器（提升胜率）
         # 回测模式下，降低阈值以产生更多交易
@@ -433,6 +634,9 @@ def main():
         min_llm = int(os.getenv('MIN_LLM_SCORE', mode_config['min_llm_score']))
         partial_tp_mult = float(os.getenv('BACKTEST_PARTIAL_TP_MULT', mode_config['partial_tp_mult']))
         
+        # 检查是否启用高频交易模式
+        allow_multiple_trades_per_day = os.getenv('ALLOW_MULTIPLE_TRADES_PER_DAY', 'True').lower() == 'true'
+        
         trades_df, metrics = simple_backtest(
             df, enhanced,
             max_hold=max_hold,
@@ -441,7 +645,8 @@ def main():
             min_llm_score=min_llm,
             min_risk_reward=min_rr,
             partial_tp_ratio=BACKTEST_PARTIAL_TP_RATIO,
-            partial_tp_mult=partial_tp_mult
+            partial_tp_mult=partial_tp_mult,
+            allow_multiple_trades_per_day=allow_multiple_trades_per_day
         )
         
         # 3.5. 更新信号日志，添加止盈止损时间信息

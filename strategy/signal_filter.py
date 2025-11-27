@@ -336,16 +336,20 @@ def apply_signal_filters(df, enhanced_signals,
             skipped_count += 1
             continue
         
-        # LLM 信号检查（如果 USE_LLM=False，signal 可能是 'Neutral'，需要特殊处理）
-        if signal != 'Long':
+        # LLM 信号检查（支持Long和Short，高频交易可能产生Short信号）
+        # 检查是否为高频交易信号
+        is_high_freq = get_value_safe(item, 'hf_signal', None) is not None or \
+                      get_value_safe(item, 'structure_label', '') == 'HIGH_FREQ'
+        
+        if signal not in ['Long', 'Short']:
             # 如果未使用 LLM，fallback 可能返回 'Neutral'，这种情况下如果评分足够高，也允许通过
             if signal == 'Neutral' and llm_score >= min_llm_score:
                 # Neutral 但评分足够，可以继续
                 pass
-            else:
+            elif not is_high_freq:  # 高频交易信号允许通过
                 skipped_count += 1
                 continue
-        elif llm_score < min_llm_score:
+        elif llm_score < min_llm_score and not is_high_freq:  # 高频交易信号降低LLM评分要求
             skipped_count += 1
             continue
         

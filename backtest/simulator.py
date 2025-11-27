@@ -7,9 +7,11 @@ from utils.logger import logger
 def simple_backtest(df, enhanced_signals, max_hold=20, atr_mult_stop=1.0, atr_mult_target=2.0, 
                     min_llm_score=40, min_risk_reward=1.5, partial_tp_ratio=0.5, partial_tp_mult=1.0,
                     max_positions: int = 5, max_daily_loss: float = 0.05, 
-                    fee_rate: float = 0.0005, slippage: float = 0.0005):
+                    fee_rate: float = 0.0005, slippage: float = 0.0005,
+                    allow_multiple_trades_per_day: bool = True):
     """
     简单回测系统
+    支持高频交易：允许一天多次交易（如果趋势允许）
     
     Args:
         df: 价格数据 DataFrame
@@ -18,13 +20,17 @@ def simple_backtest(df, enhanced_signals, max_hold=20, atr_mult_stop=1.0, atr_mu
         atr_mult_stop: 止损 ATR 倍数
         atr_mult_target: 止盈 ATR 倍数
         min_llm_score: LLM 评分最低阈值
+        allow_multiple_trades_per_day: 是否允许一天多次交易（高频模式）
     
     Returns:
         (trades_df, metrics): 交易记录 DataFrame 和回测指标字典
     """
     logger.info(f"开始回测，共有 {len(enhanced_signals)} 个信号（最小盈亏比={min_risk_reward}）")
+    if allow_multiple_trades_per_day:
+        logger.info("高频交易模式：允许一天多次交易")
     trades = []
     used_idxs = set()
+    daily_trades = {}  # 记录每天的交易次数
     from utils.json_i18n import get_value_safe
     
     for item in enhanced_signals:
@@ -39,12 +45,43 @@ def simple_backtest(df, enhanced_signals, max_hold=20, atr_mult_stop=1.0, atr_mu
         except:
             score = 0
         
+        # 获取信号方向
+        signal_direction = get_value_safe(llm, 'signal', 'Long') if isinstance(llm, dict) else 'Long'
+        
+        # 检查是否有合约交易信息（优先使用）
+        futures_info = get_value_safe(item, 'futures_info', None)
+        leverage = 1
+        liquidation_price = None
+        
+        if futures_info:
+            # 使用合约交易的止损止盈
+            stop = futures_info.get('stop_loss')
+            target = futures_info.get('take_profit')
+            risk_reward_ratio = futures_info.get('risk_reward_ratio', 0)
+            entry_price = futures_info.get('entry_price', df['close'].iloc[idx+1])
+            leverage = futures_info.get('leverage', 1)
+            liquidation_price = futures_info.get('liquidation_price')
+            
+            # 再次检查盈亏比
+            if risk_reward_ratio < min_risk_reward:
+                continue
+            
+            # 检查强制平仓价格是否合理
+            if liquidation_price:
+                if signal_direction == 'Long' and liquidation_price >= stop:
+                    logger.warning(f"信号 {idx}: 强制平仓价格 {liquidation_price:.2f} 高于止损 {stop:.2f}，跳过")
+                    continue
+                elif signal_direction == 'Short' and liquidation_price <= stop:
+                    logger.warning(f"信号 {idx}: 强制平仓价格 {liquidation_price:.2f} 低于止损 {stop:.2f}，跳过")
+                    continue
         # 如果信号已经包含过滤后的信息（quality_score, risk_reward_ratio等），直接使用
-        if 'risk_reward_ratio' in item and 'stop_loss' in item and 'take_profit' in item:
+        elif 'risk_reward_ratio' in item and 'stop_loss' in item and 'take_profit' in item:
             # 使用过滤后的止损止盈
             stop = item['stop_loss']
             target = item['take_profit']
             risk_reward_ratio = item['risk_reward_ratio']
+            leverage = 1  # 默认无杠杆
+            liquidation_price = None
             
             # 再次检查盈亏比
             if risk_reward_ratio < min_risk_reward:
@@ -54,17 +91,35 @@ def simple_backtest(df, enhanced_signals, max_hold=20, atr_mult_stop=1.0, atr_mu
         else:
             # 传统方式：计算止损止盈并检查盈亏比
             signal = get_value_safe(llm, 'signal', 'Neutral') if isinstance(llm, dict) else 'Neutral'
-            if signal != 'Long' or score < min_llm_score:
+            
+            # 检查是否为高频交易信号
+            is_high_freq = get_value_safe(item, 'hf_signal', None) is not None or \
+                          get_value_safe(item, 'structure_label', '') == 'HIGH_FREQ'
+            
+            # 支持Long和Short信号（高频交易可能产生Short信号）
+            if signal not in ['Long', 'Short']:
+                if not is_high_freq or signal == 'Neutral':
+                    continue
+            
+            if not is_high_freq and score < min_llm_score:
                 continue
-            if idx in used_idxs or idx+1>=len(df):
+            
+            if idx+1 >= len(df):
                 continue
             
             entry_price = df['close'].iloc[idx+1]
             atr = df['atr14'].iloc[idx+1] if not pd.isna(df['atr14'].iloc[idx+1]) else entry_price*0.01
             
-            # 计算盈亏比
-            stop = entry_price - atr * atr_mult_stop
-            target = entry_price + atr * atr_mult_target
+            # 根据信号方向计算止损止盈
+            if signal == 'Short':
+                # 做空：止损在上方，止盈在下方
+                stop = entry_price + atr * atr_mult_stop
+                target = entry_price - atr * atr_mult_target
+            else:
+                # 做多：止损在下方，止盈在上方
+                stop = entry_price - atr * atr_mult_stop
+                target = entry_price + atr * atr_mult_target
+            
             risk = abs(entry_price - stop)
             reward = abs(target - entry_price)
             
@@ -77,17 +132,46 @@ def simple_backtest(df, enhanced_signals, max_hold=20, atr_mult_stop=1.0, atr_mu
             if risk_reward_ratio < min_risk_reward:
                 # 调整止盈以满足最小盈亏比
                 required_reward = risk * min_risk_reward
-                target = entry_price + required_reward
+                if signal == 'Short':
+                    target = entry_price - required_reward
+                else:
+                    target = entry_price + required_reward
                 risk_reward_ratio = required_reward / risk
         
-        if idx in used_idxs or idx+1>=len(df):
+        # 检查是否可以使用该信号
+        if idx+1 >= len(df):
             continue
+        
+        # 高频模式：允许一天多次交易，但避免重叠持仓
+        if allow_multiple_trades_per_day:
+            # 检查是否有重叠持仓
+            has_overlap = False
+            for used_idx in used_idxs:
+                if abs(used_idx - idx) < max_hold:  # 如果距离太近，可能有重叠
+                    has_overlap = True
+                    break
+            
+            if has_overlap:
+                continue
+        else:
+            # 传统模式：完全避免重叠
+            if idx in used_idxs:
+                continue
+        
+        # 获取信号方向（用于计算部分止盈和交易逻辑）
+        signal_direction = get_value_safe(llm, 'signal', 'Long') if isinstance(llm, dict) else 'Long'
+        is_short = signal_direction == 'Short'
         
         # 计算部分止盈价（如果启用）
         partial_tp = None
         if partial_tp_ratio > 0 and partial_tp_mult > 0:
             atr = df['atr14'].iloc[idx+1] if 'atr14' in df.columns and not pd.isna(df['atr14'].iloc[idx+1]) else entry_price*0.01
-            partial_tp = entry_price + atr * partial_tp_mult
+            if is_short:
+                # 做空：部分止盈在下方
+                partial_tp = entry_price - atr * partial_tp_mult
+            else:
+                # 做多：部分止盈在上方
+                partial_tp = entry_price + atr * partial_tp_mult
         
         # 记录核心数据
         stop_loss = stop
@@ -101,30 +185,70 @@ def simple_backtest(df, enhanced_signals, max_hold=20, atr_mult_stop=1.0, atr_mu
         partial_exit_price = None
         partial_exit_idx = None
         
-        # 执行交易逻辑（支持部分止盈）
+        # 执行交易逻辑（支持部分止盈、做空和强制平仓检查）
         for j in range(entry_idx, min(len(df), entry_idx+max_hold)):
             low = df['low'].iloc[j]
             high = df['high'].iloc[j]
             close = df['close'].iloc[j]
             
-            # 止损检查
-            if low <= stop_loss:
-                exit_idx = j
-                exit_price = stop_loss
-                break
+            # 检查强制平仓（如果启用合约交易）
+            if futures_info and 'liquidation_price' in futures_info:
+                liquidation_price = futures_info['liquidation_price']
+                if is_short:
+                    # 做空：价格上涨到强制平仓价
+                    if high >= liquidation_price:
+                        exit_idx = j
+                        exit_price = liquidation_price
+                        logger.warning(f"强制平仓（做空）: 在索引 {j} 以 {exit_price:.4f} 平仓")
+                        break
+                else:
+                    # 做多：价格下跌到强制平仓价
+                    if low <= liquidation_price:
+                        exit_idx = j
+                        exit_price = liquidation_price
+                        logger.warning(f"强制平仓（做多）: 在索引 {j} 以 {exit_price:.4f} 平仓")
+                        break
             
-            # 部分止盈检查（如果启用且尚未部分止盈）
-            if partial_take_profit and not partial_exited and high >= partial_take_profit:
-                partial_exited = True
-                partial_exit_price = partial_take_profit
-                partial_exit_idx = j
-                # 继续持仓剩余部分
-            
-            # 全部止盈检查
-            if high >= full_take_profit:
-                exit_idx = j
-                exit_price = full_take_profit
-                break
+            if is_short:
+                # 做空：止损在上方，止盈在下方
+                # 止损检查（价格向上突破止损）
+                if high >= stop_loss:
+                    exit_idx = j
+                    exit_price = stop_loss
+                    break
+                
+                # 部分止盈检查（价格向下达到部分止盈）
+                if partial_take_profit and not partial_exited and low <= partial_take_profit:
+                    partial_exited = True
+                    partial_exit_price = partial_take_profit
+                    partial_exit_idx = j
+                    # 继续持仓剩余部分
+                
+                # 全部止盈检查（价格向下达到全部止盈）
+                if low <= full_take_profit:
+                    exit_idx = j
+                    exit_price = full_take_profit
+                    break
+            else:
+                # 做多：止损在下方，止盈在上方
+                # 止损检查
+                if low <= stop_loss:
+                    exit_idx = j
+                    exit_price = stop_loss
+                    break
+                
+                # 部分止盈检查（如果启用且尚未部分止盈）
+                if partial_take_profit and not partial_exited and high >= partial_take_profit:
+                    partial_exited = True
+                    partial_exit_price = partial_take_profit
+                    partial_exit_idx = j
+                    # 继续持仓剩余部分
+                
+                # 全部止盈检查
+                if high >= full_take_profit:
+                    exit_idx = j
+                    exit_price = full_take_profit
+                    break
             
             # 达到最大持仓周期
             if j == min(len(df)-1, entry_idx+max_hold-1):
@@ -135,15 +259,27 @@ def simple_backtest(df, enhanced_signals, max_hold=20, atr_mult_stop=1.0, atr_mu
         if exit_idx is None:
             continue
         
-        # 计算收益率（考虑部分止盈）
-        if partial_exited:
-            # 部分止盈 + 剩余部分平仓
-            partial_return = (partial_exit_price - entry_price) / entry_price * partial_tp_ratio
-            remaining_return = (exit_price - entry_price) / entry_price * (1 - partial_tp_ratio)
-            total_return = partial_return + remaining_return
+        # 计算收益率（考虑部分止盈和做空）
+        if is_short:
+            # 做空：价格下跌为盈利
+            if partial_exited:
+                # 部分止盈 + 剩余部分平仓
+                partial_return = (entry_price - partial_exit_price) / entry_price * partial_tp_ratio
+                remaining_return = (entry_price - exit_price) / entry_price * (1 - partial_tp_ratio)
+                total_return = partial_return + remaining_return
+            else:
+                # 全部平仓
+                total_return = (entry_price - exit_price) / entry_price
         else:
-            # 全部平仓
-            total_return = (exit_price - entry_price) / entry_price
+            # 做多：价格上涨为盈利
+            if partial_exited:
+                # 部分止盈 + 剩余部分平仓
+                partial_return = (partial_exit_price - entry_price) / entry_price * partial_tp_ratio
+                remaining_return = (exit_price - entry_price) / entry_price * (1 - partial_tp_ratio)
+                total_return = partial_return + remaining_return
+            else:
+                # 全部平仓
+                total_return = (exit_price - entry_price) / entry_price
         
         rule_type = get_value_safe(s, 'type', 'unknown')
         
@@ -194,10 +330,14 @@ def simple_backtest(df, enhanced_signals, max_hold=20, atr_mult_stop=1.0, atr_mu
             logger.info(f"  部分止盈: 在索引 {partial_exit_idx} 以 {partial_exit_price:.4f} 平仓 {partial_tp_ratio*100:.0f}%")
         logger.info(f"  平仓: 在索引 {exit_idx} 以 {exit_price:.4f} 平仓, 收益率: {total_return:.2%}")
         
+        # 记录已使用的索引（避免重叠持仓）
         for k in range(entry_idx, exit_idx+1):
             used_idxs.add(k)
-        for k in range(entry_idx, exit_idx+1):
-            used_idxs.add(k)
+        
+        # 记录每日交易次数（用于高频交易统计）
+        if isinstance(df.index, pd.DatetimeIndex) and entry_idx < len(df.index):
+            trade_date = df.index[entry_idx].strftime('%Y-%m-%d')
+            daily_trades[trade_date] = daily_trades.get(trade_date, 0) + 1
     trades_df = pd.DataFrame(trades)
     if trades_df.empty:
         logger.warning("回测中未执行任何交易")
