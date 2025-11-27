@@ -183,20 +183,39 @@ def call_deepseek_chat(prompt: str, model: str = 'deepseek-reasoner',
             # 检查是否有 finish_reason
             finish_reason = response.choices[0].finish_reason if hasattr(response.choices[0], 'finish_reason') else None
             
+            # 获取使用情况（用于调试）
+            usage_info = ""
+            if hasattr(response, 'usage') and response.usage:
+                usage = response.usage
+                usage_info = f", 使用tokens: 输入={usage.prompt_tokens}, 输出={usage.completion_tokens}, 总计={usage.total_tokens}"
+            
             if txt is None or txt.strip() == '':
-                # 如果 finish_reason 是 'length'，说明响应被截断了，但至少有一些内容
+                # 如果 finish_reason 是 'length'，说明响应被截断了
+                # 但内容为空，这可能是 API 的问题，或者响应确实被完全截断了
                 if finish_reason == 'length':
-                    logger.warning(f"DeepSeek API响应被截断 (model={model}, finish_reason=length)，但返回内容为空")
+                    logger.error(f"DeepSeek API响应被截断且内容为空 (model={model}, finish_reason=length, max_tokens={adjusted_max_tokens}{usage_info})")
+                    logger.error(f"   这可能是 API 问题，或者 max_tokens 太小导致响应被完全截断")
+                    logger.error(f"   建议：1) 增加 OPENAI_MAX_TOKENS 到至少 {adjusted_max_tokens * 2}")
+                    logger.error(f"         2) 或者使用 deepseek-chat 作为替代")
+                    # 对于这种情况，如果是第一次尝试且有 fallback 模型，尝试 fallback
+                    if attempt == 0 and fallback_model and fallback_model != model:
+                        logger.warning(f"尝试使用备用模型 {fallback_model} 替代 {model}")
+                        try:
+                            return call_deepseek_chat(prompt, model=fallback_model, temperature=temperature, 
+                                                    max_tokens=max_tokens, retry_count=retry_count, 
+                                                    fallback_model=None)
+                        except Exception as fallback_error:
+                            logger.error(f"备用模型 {fallback_model} 也失败: {fallback_error}")
                     raise ValueError(f"Response truncated from DeepSeek API (model={model}), but content is empty")
                 else:
-                    logger.warning(f"DeepSeek API返回空响应 (model={model}, finish_reason={finish_reason})")
+                    logger.warning(f"DeepSeek API返回空响应 (model={model}, finish_reason={finish_reason}{usage_info})")
                     raise ValueError(f"Empty response from DeepSeek API (model={model}, finish_reason={finish_reason})")
             
             # 如果 finish_reason 是 'length'，说明响应被截断了，但至少有一些内容
             # 对于这种情况，我们仍然返回已返回的内容（即使被截断），而不是抛出异常
             # 因为部分内容总比没有内容好，上层可以处理不完整的响应
             if finish_reason == 'length':
-                logger.warning(f"DeepSeek API响应被截断 (model={model}, finish_reason=length, max_tokens={adjusted_max_tokens})，返回部分内容")
+                logger.warning(f"DeepSeek API响应被截断 (model={model}, finish_reason=length, max_tokens={adjusted_max_tokens}{usage_info})，返回部分内容")
                 logger.warning(f"   建议：如果响应不完整，可以增加 OPENAI_MAX_TOKENS 配置（当前: {max_tokens} -> 建议: {adjusted_max_tokens * 2}）")
                 # 仍然返回已返回的内容，让上层决定如何处理
                 return txt.strip()
