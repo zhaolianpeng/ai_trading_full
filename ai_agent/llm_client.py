@@ -18,6 +18,10 @@ except ImportError:
 _client: Optional[OpenAI] = None
 _deepseek_client: Optional[OpenAI] = None
 
+# 全局请求计数器（用于限流控制）
+_last_request_time: dict = {}
+_min_request_interval = 0.1  # 最小请求间隔（秒），避免过快请求
+
 def get_openai_client() -> OpenAI:
     """获取或创建 OpenAI 客户端实例"""
     global _client
