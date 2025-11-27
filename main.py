@@ -1,27 +1,70 @@
-# main.py
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+AI 交易系统主程序
+
+功能：
+1. 数据加载：支持多种数据源（CSV、Yahoo Finance、Binance、合成数据）
+2. 策略执行：单时间周期和多时间周期分析
+3. 信号过滤：质量评分、风险收益比、LLM评分等
+4. 合约交易增强：杠杆、仓位管理、强制平仓保护
+5. 高频交易：多时间周期超买/超卖判断
+6. 回测系统：支持做多/做空、杠杆、强制平仓
+7. 结果可视化：价格图表、回测结果、性能报告
+
+作者: AI Trading System
+版本: 4.2
+"""
 import json
-import sys
 import os
-import pandas as pd
+import sys
 from pathlib import Path
+from typing import List, Dict, Any, Optional
+
+import pandas as pd
+
+# 数据层导入
 from data.loader import gen_synthetic, load_csv
 from data.market_data import fetch_market_data, get_popular_symbols
+
+# 策略层导入
 from strategy.strategy_runner import run_strategy
+
+# 回测层导入
 from backtest.simulator import simple_backtest
+
+# 配置导入
 from config import (
     DATA_SOURCE, DATA_PATH, MARKET_SYMBOL, MARKET_PERIOD, MARKET_INTERVAL,
     MARKET_TIMEFRAME, MARKET_LIMIT, USE_LLM, SYNTHETIC_DATA_SIZE, OUTPUT_DIR,
     BACKTEST_MAX_HOLD, BACKTEST_ATR_STOP_MULT, BACKTEST_ATR_TARGET_MULT, MIN_LLM_SCORE,
     USE_ADVANCED_TA, USE_ERIC_INDICATORS, MIN_RISK_REWARD, MIN_QUALITY_SCORE,
     MIN_CONFIRMATIONS, USE_SIGNAL_FILTER, BACKTEST_PARTIAL_TP_RATIO, BACKTEST_PARTIAL_TP_MULT,
-    TRADING_MODE, SIGNAL_LOOKBACK_DAYS
+    TRADING_MODE, SIGNAL_LOOKBACK_DAYS, MARKET_TYPE
 )
+
+# 工具层导入
 from utils.logger import logger
 from utils.visualization import plot_price_with_signals, plot_backtest_results, generate_report
 from utils.config_validator import validate_config, print_config_summary
 
-def main():
-    """主函数：运行完整的交易策略流程"""
+def main() -> int:
+    """
+    主函数：运行完整的交易策略流程
+    
+    流程：
+    1. 配置验证和交易模式应用
+    2. 数据加载（CSV/Yahoo/Binance/合成数据）
+    3. 策略执行（单时间周期或多时间周期）
+    4. 合约交易策略增强（如果启用）
+    5. 高频交易策略（如果启用）
+    6. 信号过滤（质量评分、风险收益比等）
+    7. 回测执行
+    8. 结果可视化和报告生成
+    
+    Returns:
+        int: 退出码（0表示成功，非0表示失败）
+    """
     try:
         logger.info("=" * 60)
         logger.info("AI 交易系统 - 启动中")

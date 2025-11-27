@@ -1,20 +1,34 @@
-# strategy/high_frequency_strategy.py
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
-高频交易策略
-基于多时间周期超买/超卖判断，在小周期寻找反向交易机会
+高频交易策略模块
+
+基于多时间周期超买/超卖判断，在小周期寻找反向交易机会。
 
 策略逻辑：
 1. 日线或4小时线连续处于超买状态 -> 在小时线和5分钟线找机会做空
 2. 日线或4小时线连续处于超卖状态 -> 在小时线和5分钟线找机会做多
 3. 分钟级高频短单，一天可以多次交易
+
+主要功能：
+- 超买/超卖检测：基于RSI指标
+- 连续条件检查：判断大周期是否连续超买/超卖
+- 1小时线机会查找：趋势确认、RSI、动量、成交量等
+- 5分钟线入场优化：价格回调/反弹、成交量、K线形态等
+- 多时间周期数据获取：日线、4小时、1小时、5分钟
+
+作者: AI Trading System
+版本: 4.2
 """
-import pandas as pd
-import numpy as np
-from typing import List, Dict, Optional, Tuple
 from datetime import datetime, timedelta
-from utils.logger import logger
-from data.market_data import fetch_market_data
+from typing import Dict, List, Optional, Tuple
+
+import numpy as np
+import pandas as pd
+
 from config import DATA_SOURCE, MARKET_SYMBOL, MARKET_TYPE
+from data.market_data import fetch_market_data
+from utils.logger import logger
 
 def detect_overbought_oversold(df: pd.DataFrame, period: int = 14, 
                                 overbought_threshold: float = 70.0,

@@ -1,4 +1,18 @@
-# strategy/strategy_runner.py
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+策略执行器模块
+
+负责执行交易策略，包括：
+1. 技术指标计算
+2. 信号检测
+3. 特征包构建
+4. LLM分析（可选）
+5. 市场结构分类
+
+作者: AI Trading System
+版本: 4.2
+"""
 import pandas as pd
 import numpy as np
 from signal_rules import detect_rules
@@ -6,12 +20,12 @@ from ai_agent.signal_interpret import interpret_with_llm
 from config import USE_LLM, OPENAI_MODEL, DEEPSEEK_MODEL, LLM_PROVIDER, OPENAI_TEMPERATURE, OPENAI_MAX_TOKENS, MARKET_INTERVAL, MARKET_TIMEFRAME
 from utils.logger import logger
 import math
-from typing import List, Dict
+from typing import Any, Dict, List, Optional, Tuple
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from strategy.market_structure_analyzer import analyze_market_structure
 
-def build_feature_packet(df, idx, window: int = 50):
+def build_feature_packet(df: pd.DataFrame, idx: int, window: int = 50) -> Dict[str, Any]:
     """
     构建特征包，包含所有技术指标用于决策判断
     参考 ai_quant_strategy.py 的实现，添加价格序列
@@ -214,7 +228,13 @@ def rule_structure_classifier(df: pd.DataFrame, idx: int) -> str:
     
     return "RANGE"
 
-def run_strategy(df, use_llm=USE_LLM, use_advanced_ta=True, use_eric_indicators=False, lookback_days=None):
+def run_strategy(
+    df: pd.DataFrame,
+    use_llm: bool = USE_LLM,
+    use_advanced_ta: bool = True,
+    use_eric_indicators: bool = False,
+    lookback_days: Optional[int] = None
+) -> Tuple[pd.DataFrame, List[Dict]]:
     """
     运行完整的策略流程
     

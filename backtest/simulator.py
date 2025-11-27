@@ -1,7 +1,24 @@
-# backtest/simulator.py
-import pandas as pd
-import numpy as np
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+回测模拟器模块
+
+支持功能：
+1. 做多/做空交易
+2. 杠杆交易（合约）
+3. 强制平仓检查
+4. 部分止盈
+5. 一天多次交易（高频模式）
+6. 手续费和滑点模拟
+
+作者: AI Trading System
+版本: 4.2
+"""
 from typing import Dict, List, Optional, Tuple
+
+import numpy as np
+import pandas as pd
+
 from utils.logger import logger
 
 def simple_backtest(df, enhanced_signals, max_hold=20, atr_mult_stop=1.0, atr_mult_target=2.0, 

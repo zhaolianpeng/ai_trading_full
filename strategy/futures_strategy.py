@@ -1,7 +1,9 @@
-# strategy/futures_strategy.py
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
-合约交易策略
-专门针对合约交易（做多/做空）优化的策略模块
+合约交易策略模块
+
+专门针对合约交易（做多/做空）优化的策略模块。
 
 合约交易特点：
 1. 可以做多和做空
@@ -9,11 +11,23 @@
 3. 需要保证金
 4. 有强制平仓风险
 5. 需要更精确的止损止盈
+
+主要功能：
+- 仓位计算：基于风险比例、杠杆、保证金率
+- 强制平仓价格计算：考虑维持保证金率
+- 杠杆自适应止损：杠杆越高，止损越小
+- 做多/做空信号增强：自动添加合约交易信息
+- 强制平仓风险检查：实时监控爆仓风险
+
+作者: AI Trading System
+版本: 4.2
 """
-import pandas as pd
-import numpy as np
-from typing import Dict, List, Optional, Tuple
 from datetime import datetime
+from typing import Dict, List, Optional, Tuple
+
+import numpy as np
+import pandas as pd
+
 from utils.logger import logger
 
 def calculate_futures_position_size(
@@ -217,12 +231,12 @@ def calculate_futures_take_profit(
     return take_profit
 
 def enhance_long_signal_for_futures(
-    signal: Dict,
+    signal: Dict[str, Any],
     df: pd.DataFrame,
     idx: int,
     leverage: int = 1,
     risk_per_trade: float = 0.02
-) -> Dict:
+) -> Dict[str, Any]:
     """
     增强做多信号，针对合约交易优化
     
@@ -307,12 +321,12 @@ def enhance_long_signal_for_futures(
     return signal
 
 def enhance_short_signal_for_futures(
-    signal: Dict,
+    signal: Dict[str, Any],
     df: pd.DataFrame,
     idx: int,
     leverage: int = 1,
     risk_per_trade: float = 0.02
-) -> Dict:
+) -> Dict[str, Any]:
     """
     增强做空信号，针对合约交易优化
     
@@ -400,7 +414,25 @@ def check_liquidation_risk(
     liquidation_price: float,
     direction: str,
     warning_threshold: float = 0.1
-) -> Dict:
+) -> Dict[str, Any]:
+    """
+    检查强制平仓风险
+    
+    根据当前价格与强制平仓价格的距离，评估风险等级：
+    - CRITICAL: 距离 < 30% * warning_threshold
+    - HIGH: 距离 < 50% * warning_threshold
+    - MEDIUM: 距离 < warning_threshold
+    - LOW: 距离 >= warning_threshold
+    
+    Args:
+        current_price: 当前价格
+        liquidation_price: 强制平仓价格
+        direction: 方向（'Long' 或 'Short'）
+        warning_threshold: 警告阈值（距离爆仓价的百分比，默认10%）
+    
+    Returns:
+        Dict: 包含风险等级、距离、距离百分比等信息的字典
+    """
     """
     检查强制平仓风险
     
