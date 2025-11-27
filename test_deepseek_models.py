@@ -46,7 +46,11 @@ for model in models_to_test:
     print(f"\n测试模型: {model}")
     try:
         # 对于推理模型，使用更大的 max_tokens
-        test_max_tokens = 800 if 'reasoner' in model else 10
+        # 对于普通模型，也使用合理的值（50）以避免截断
+        if 'reasoner' in model:
+            test_max_tokens = 800
+        else:
+            test_max_tokens = 50  # 足够返回完整问候语
         
         response = client.chat.completions.create(
             model=model,
@@ -64,9 +68,27 @@ for model in models_to_test:
         finish_reason = response.choices[0].finish_reason if hasattr(response.choices[0], 'finish_reason') else None
         
         if txt:
-            print(f"  ✅ {model} 可用 - 响应: {txt[:50]}")
+            status_icon = "✅"
+            if finish_reason == 'length':
+                status_icon = "⚠️"  # 虽然可用，但被截断了
+                print(f"  {status_icon} {model} 可用（但响应被截断）- 响应: {txt[:50]}...")
+            else:
+                print(f"  {status_icon} {model} 可用 - 响应: {txt[:50]}")
+            
             if finish_reason:
-                print(f"     完成原因: {finish_reason}")
+                reason_text = {
+                    'stop': '正常完成',
+                    'length': '达到最大token限制（被截断）',
+                    'content_filter': '内容被过滤',
+                    'function_call': '函数调用',
+                    'tool_calls': '工具调用'
+                }.get(finish_reason, finish_reason)
+                print(f"     完成原因: {finish_reason} ({reason_text})")
+            
+            # 显示使用情况
+            if hasattr(response, 'usage') and response.usage:
+                usage = response.usage
+                print(f"     Token使用: 输入={usage.prompt_tokens}, 输出={usage.completion_tokens}, 总计={usage.total_tokens}")
         else:
             print(f"  ⚠️  {model} 返回空响应")
             if finish_reason:
