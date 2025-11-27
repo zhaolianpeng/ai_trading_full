@@ -170,11 +170,24 @@ def call_deepseek_chat(prompt: str, model: str = 'deepseek-reasoner',
             error_msg = str(e)
             error_type = type(e).__name__
             
+            # 记录详细的错误信息（用于诊断）
+            if attempt == 0:  # 只在第一次尝试时记录详细信息
+                logger.debug(f"DeepSeek API错误详情 (model={model}): 类型={error_type}, 消息={error_msg}")
+                # 如果是API错误，尝试获取更多信息
+                if hasattr(e, 'response') and e.response is not None:
+                    try:
+                        error_body = e.response.json() if hasattr(e.response, 'json') else str(e.response)
+                        logger.debug(f"DeepSeek API错误响应体: {error_body}")
+                    except:
+                        pass
+            
             # 检查是否是模型不存在错误（404, model not found等）
             is_model_not_found = ('404' in error_msg or 
                                  'model' in error_msg.lower() and 'not found' in error_msg.lower() or
                                  'invalid model' in error_msg.lower() or
-                                 'unknown model' in error_msg.lower())
+                                 'unknown model' in error_msg.lower() or
+                                 'model_not_found' in error_msg.lower() or
+                                 'does not exist' in error_msg.lower())
             
             # 检查是否是空响应错误
             is_empty_response = 'empty response' in error_msg.lower() or 'Empty response' in error_msg
@@ -185,6 +198,17 @@ def call_deepseek_chat(prompt: str, model: str = 'deepseek-reasoner',
                            'quota' in error_msg.lower() or 
                            'insufficient balance' in error_msg.lower())
             
+            # 检查是否是认证错误（401）
+            is_auth_error = ('401' in error_msg or 
+                           'unauthorized' in error_msg.lower() or
+                           'invalid api key' in error_msg.lower() or
+                           'authentication' in error_msg.lower())
+            
+            # 如果是认证错误，不重试，直接抛出
+            if is_auth_error:
+                logger.error(f"DeepSeek API认证失败 (model={model}): {error_msg}，请检查API Key是否正确")
+                raise
+            
             # 如果是模型不存在错误，且是第一次尝试，尝试使用fallback模型
             if is_model_not_found and attempt == 0 and fallback_model and fallback_model != model:
                 logger.warning(f"DeepSeek模型 {model} 不可用: {error_msg}，尝试使用备用模型 {fallback_model}")
@@ -193,7 +217,15 @@ def call_deepseek_chat(prompt: str, model: str = 'deepseek-reasoner',
                                             max_tokens=max_tokens, retry_count=retry_count, 
                                             fallback_model=None)  # 避免无限递归
                 except Exception as fallback_error:
-                    logger.error(f"备用模型 {fallback_model} 也失败: {fallback_error}")
+                    fallback_error_msg = str(fallback_error)
+                    logger.error(f"备用模型 {fallback_model} 也失败: {fallback_error_msg}")
+                    # 如果fallback也失败，记录可能的原因
+                    if 'model' in fallback_error_msg.lower() and 'not found' in fallback_error_msg.lower():
+                        logger.error(f"⚠️  DeepSeek模型 {fallback_model} 也不可用，可能的原因：")
+                        logger.error(f"   1. 模型名称错误（当前尝试: {model}, {fallback_model}）")
+                        logger.error(f"   2. API Key权限不足（无法访问这些模型）")
+                        logger.error(f"   3. DeepSeek服务暂时不可用")
+                        logger.error(f"   建议：检查DeepSeek官方文档确认可用模型名称，或检查API Key权限")
                     # 继续使用原模型的重试逻辑
             
             # 空响应或余额不足时，不重试，直接抛出异常（让上层使用fallback）
