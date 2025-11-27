@@ -1,10 +1,13 @@
 # backtest/simulator.py
 import pandas as pd
 import numpy as np
+from typing import Dict, List, Optional, Tuple
 from utils.logger import logger
 
 def simple_backtest(df, enhanced_signals, max_hold=20, atr_mult_stop=1.0, atr_mult_target=2.0, 
-                    min_llm_score=40, min_risk_reward=1.5, partial_tp_ratio=0.5, partial_tp_mult=1.0):
+                    min_llm_score=40, min_risk_reward=1.5, partial_tp_ratio=0.5, partial_tp_mult=1.0,
+                    max_positions: int = 5, max_daily_loss: float = 0.05, 
+                    fee_rate: float = 0.0005, slippage: float = 0.0005):
     """
     简单回测系统
     

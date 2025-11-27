@@ -1,7 +1,8 @@
 # utils/entry_finder.py
 """
 入场点查找工具
-在3分钟周期中找到最佳入场点
+在短周期（5分钟或3分钟）中找到最佳入场点
+注意：虽然函数名是3m，但实际优先使用5分钟数据（更稳定）
 """
 import pandas as pd
 import numpy as np
@@ -18,14 +19,15 @@ def find_best_entry_point_3m(
     lookforward_minutes: int = 60
 ) -> Optional[Dict]:
     """
-    在3分钟周期中找到最佳入场点
-    在小时级指标命中之后，观察多个3分钟周期的K线值，找到最适合的入场时机
+    在短周期（5分钟或3分钟）中找到最佳入场点
+    在小时级指标命中之后，观察多个短周期的K线值，找到最适合的入场时机
+    注意：优先使用5分钟数据（更稳定），如果不可用则尝试3分钟
     
     Args:
         signal_time: 信号产生的时间（小时级）
         signal_price: 信号产生时的价格
         signal_direction: 信号方向 ('Long' 或 'Short')
-        lookforward_minutes: 向前查找的分钟数（默认60分钟，即20个3分钟K线）
+        lookforward_minutes: 向前查找的分钟数（默认60分钟，即12个5分钟K线或20个3分钟K线）
     
     Returns:
         包含最佳入场点信息的字典，如果找不到则返回None
@@ -41,22 +43,41 @@ def find_best_entry_point_3m(
         start_time = signal_time
         end_time = signal_time + timedelta(minutes=lookforward_minutes)
         
-        logger.info(f"查找3分钟周期入场点: 信号时间={signal_time}, 方向={signal_direction}, 向前查找{lookforward_minutes}分钟")
+        logger.info(f"查找短周期入场点: 信号时间={signal_time}, 方向={signal_direction}, 向前查找{lookforward_minutes}分钟")
         
-        # 根据数据源获取3分钟数据
+        # 根据数据源获取短周期数据（优先使用5分钟，因为更通用）
+        # 注意：虽然函数名叫3m，但实际使用5m数据，因为Binance的3m在某些市场可能不稳定
         if DATA_SOURCE == 'binance':
-            # Binance 支持 3m 时间框架
             from data.market_data import fetch_binance_data
-            df_3m = fetch_binance_data(
-                symbol=MARKET_SYMBOL,
-                timeframe='3m',
-                start_time=start_time,
-                end_time=end_time,
-                limit=100
-            )
+            # 优先尝试5m，如果失败则尝试3m
+            try:
+                df_3m = fetch_binance_data(
+                    symbol=MARKET_SYMBOL,
+                    timeframe='5m',  # 使用5分钟，更稳定
+                    start_time=start_time,
+                    end_time=end_time,
+                    limit=100
+                )
+            except ValueError as e:
+                # 如果5m失败，尝试3m（某些市场可能支持）
+                if 'Unsupported timeframe' in str(e):
+                    try:
+                        logger.info("5分钟数据获取失败，尝试使用3分钟数据")
+                        df_3m = fetch_binance_data(
+                            symbol=MARKET_SYMBOL,
+                            timeframe='3m',
+                            start_time=start_time,
+                            end_time=end_time,
+                            limit=100
+                        )
+                    except Exception as e2:
+                        logger.warning(f"无法获取3分钟或5分钟数据: {e2}，跳过入场点查找")
+                        return None
+                else:
+                    raise
         elif DATA_SOURCE == 'yahoo':
             # Yahoo Finance 最小支持 5m，使用 5m 作为替代
-            logger.warning("Yahoo Finance 不支持3分钟数据，使用5分钟数据作为替代")
+            logger.info("Yahoo Finance 使用5分钟数据作为入场点查找")
             from data.market_data import fetch_yahoo_data
             try:
                 df_5m = fetch_yahoo_data(
@@ -74,29 +95,50 @@ def find_best_entry_point_3m(
                 logger.warning(f"获取Yahoo Finance数据失败: {e}，跳过入场点查找")
                 return None
         else:
-            # 其他数据源可能不支持3分钟，返回None
-            logger.warning(f"数据源 {DATA_SOURCE} 可能不支持3分钟数据，跳过入场点查找")
+            # 其他数据源可能不支持短周期，返回None
+            logger.warning(f"数据源 {DATA_SOURCE} 可能不支持短周期数据，跳过入场点查找")
             return None
         
         if df_3m.empty:
-            logger.warning("3分钟周期数据为空，跳过入场点查找")
+            logger.warning("短周期数据为空，跳过入场点查找")
             return None
         
         # 找到信号时间对应的K线
         signal_idx = None
-        if isinstance(df_3m.index, pd.DatetimeIndex):
-            # 找到最接近信号时间的K线
-            try:
-                time_diffs = abs(df_3m.index - signal_time)
-                closest_time = time_diffs.idxmin()
-                signal_idx = df_3m.index.get_loc(closest_time)
-                # 如果 get_loc 返回的是切片，取第一个
-                if isinstance(signal_idx, slice):
-                    signal_idx = signal_idx.start if signal_idx.start is not None else 0
-            except Exception as e:
-                logger.warning(f"查找信号时间对应的K线时出错: {e}")
-                # 使用最后一个索引作为备选
+        try:
+            # 确保索引是时间类型
+            if not isinstance(df_3m.index, pd.DatetimeIndex):
+                # 尝试转换为 DatetimeIndex
+                df_3m.index = pd.to_datetime(df_3m.index)
+            
+            # 计算时间差（转换为总秒数，便于比较）
+            time_diffs = abs(df_3m.index - signal_time)
+            
+            # 将时间差转换为数值（总秒数），然后使用 numpy 的 argmin
+            # 这样可以避免 TimedeltaIndex 没有 idxmin() 方法的问题
+            if hasattr(time_diffs, 'total_seconds'):
+                # 如果是 TimedeltaIndex，转换为秒数
+                time_diffs_seconds = np.array([td.total_seconds() for td in time_diffs])
+            elif hasattr(time_diffs, 'values'):
+                # 如果有 values 属性，直接使用
+                time_diffs_seconds = np.array(time_diffs.values)
+            else:
+                # 转换为列表再转数组
+                time_diffs_seconds = np.array([float(td) for td in time_diffs])
+            
+            # 使用 numpy 的 argmin 获取最小值的索引位置
+            min_idx = np.argmin(time_diffs_seconds)
+            
+            # 获取对应的索引位置
+            if 0 <= min_idx < len(df_3m):
+                signal_idx = int(min_idx)
+            else:
                 signal_idx = len(df_3m) - 1
+                
+        except Exception as e:
+            logger.warning(f"查找信号时间对应的K线时出错: {e}")
+            # 使用最后一个索引作为备选
+            signal_idx = len(df_3m) - 1
         
         if signal_idx is None or signal_idx >= len(df_3m) or signal_idx < 0:
             logger.warning(f"无法找到信号时间对应的K线 (signal_idx={signal_idx}, df_len={len(df_3m)})")

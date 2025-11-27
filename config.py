@@ -25,6 +25,7 @@ OPENAI_MODEL = os.getenv('OPENAI_MODEL', 'gpt-4o-mini')  # OpenAI 模型（如 '
 DEEPSEEK_MODEL = os.getenv('DEEPSEEK_MODEL', 'deepseek-reasoner')  # DeepSeek 模型（如 'deepseek-chat', 'deepseek-reasoner'）
 OPENAI_TEMPERATURE = float(os.getenv('OPENAI_TEMPERATURE', '0.0'))  # LLM 温度参数
 OPENAI_MAX_TOKENS = int(os.getenv('OPENAI_MAX_TOKENS', '400'))  # LLM 最大token数
+LLM_CONCURRENT_WORKERS = int(os.getenv('LLM_CONCURRENT_WORKERS', '5'))  # LLM并发处理线程数（默认5，可根据API限制调整）
 
 # ==================== 回测配置 ====================
 BACKTEST_MAX_HOLD = int(os.getenv('BACKTEST_MAX_HOLD', '20'))  # 最大持仓周期

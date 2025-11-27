@@ -5,6 +5,7 @@
 import pandas as pd
 import numpy as np
 import os
+from typing import List, Optional
 from utils.logger import logger
 from utils.json_i18n import get_value_safe
 from strategy.market_structure_analyzer import calculate_trend_strength
@@ -186,7 +187,68 @@ def filter_signal_quality(df, idx, signal_data, min_confirmations=2):
             score += 15
             reasons.append(f"接近支撑位({support_distance:.2%})")
     
-    # 11. LLM 评分加权（如果可用）
+    # 11. 随机指标确认（+10分，如果可用）
+    if 'stoch_k' in df.columns and 'stoch_d' in df.columns:
+        if not pd.isna(row['stoch_k']) and not pd.isna(row['stoch_d']):
+            stoch_k = row['stoch_k']
+            stoch_d = row['stoch_d']
+            # 随机指标金叉或处于上升趋势
+            if stoch_k > stoch_d and stoch_k < 80:  # 金叉且未超买
+                score += 10
+                reasons.append(f"随机指标金叉(K={stoch_k:.1f}, D={stoch_d:.1f})")
+    
+    # 12. CCI确认（+10分，如果可用）
+    if 'cci' in df.columns and not pd.isna(row.get('cci', np.nan)):
+        cci = row['cci']
+        if 0 < cci < 100:  # CCI在健康区间
+            score += 10
+            reasons.append(f"CCI健康({cci:.1f})")
+        elif cci < -100:
+            score += 5  # 超卖
+            reasons.append(f"CCI超卖({cci:.1f})")
+    
+    # 13. ADX确认（+15分，如果可用）
+    if 'adx' in df.columns and not pd.isna(row.get('adx', np.nan)):
+        adx = row['adx']
+        if adx > 25:  # 强趋势
+            score += 15
+            reasons.append(f"ADX强趋势({adx:.1f})")
+        elif adx > 20:
+            score += 10
+            reasons.append(f"ADX中等趋势({adx:.1f})")
+    
+    # 14. Donchian通道确认（+10分，如果可用）
+    if 'donchian_trend' in df.columns and not pd.isna(row.get('donchian_trend', np.nan)):
+        donchian_trend = str(row['donchian_trend']).upper()
+        if donchian_trend == 'UP':
+            score += 10
+            reasons.append("Donchian通道上升趋势")
+    
+    # 15. EMA眼确认（+10分，如果可用）
+    if 'ema_eye' in df.columns and not pd.isna(row.get('ema_eye', np.nan)):
+        ema_eye = abs(row['ema_eye'])
+        if ema_eye < 1.0:  # 小眼，接近EMA
+            score += 10
+            reasons.append(f"EMA眼小({ema_eye:.2f}%)")
+    
+    # 16. 价格位置确认（+10分）
+    if idx >= 50:
+        high_50 = df['high'].iloc[max(0, idx-49):idx+1].max()
+        low_50 = df['low'].iloc[max(0, idx-49):idx+1].min()
+        if high_50 > low_50:
+            price_position = (row['close'] - low_50) / (high_50 - low_50)
+            if 0.5 < price_position < 0.8:  # 价格在区间中上部
+                score += 10
+                reasons.append(f"价格位置良好({price_position:.2%})")
+    
+    # 17. 威廉指标确认（+5分，如果可用）
+    if 'williams_r' in df.columns and not pd.isna(row.get('williams_r', np.nan)):
+        wr = row['williams_r']
+        if -50 < wr < -20:  # 威廉指标在健康区间
+            score += 5
+            reasons.append(f"威廉指标健康({wr:.1f})")
+    
+    # 18. LLM 评分加权（如果可用）
     llm = get_value_safe(signal_data, 'llm', {})
     if isinstance(llm, dict):
         llm_score = get_value_safe(llm, 'score', 0)
@@ -207,13 +269,16 @@ def filter_signal_quality(df, idx, signal_data, min_confirmations=2):
     
     return is_valid, score, reasons
 
-def apply_signal_filters(df, enhanced_signals, 
+def apply_signal_filters(df, enhanced_signals,
                          min_quality_score=50,
                          min_confirmations=2,
                          min_risk_reward=1.5,
-                         min_llm_score=40):
+                         min_llm_score=40,
+                         structure_confidence_threshold: int = 40,
+                         allowed_structure_labels: Optional[List[str]] = None):
     """
     应用信号过滤器，提升胜率
+    参考 ai_quant_strategy.py 的实现，只在特定结构标签下生成信号
     
     Args:
         df: 价格数据 DataFrame
@@ -222,11 +287,17 @@ def apply_signal_filters(df, enhanced_signals,
         min_confirmations: 最小确认数量
         min_risk_reward: 最小盈亏比要求
         min_llm_score: 最小 LLM 评分
+        structure_confidence_threshold: 结构置信度阈值（LLM评分）
+        allowed_structure_labels: 允许的结构标签列表（None表示使用默认：TREND_UP, BREAKOUT_UP, REVERSAL_UP）
     
     Returns:
         过滤后的信号列表（包含质量评分和盈亏比信息）
     """
-    logger.info(f"应用信号过滤器（最小质量评分={min_quality_score}, 最小盈亏比={min_risk_reward}）...")
+    if allowed_structure_labels is None:
+        # 默认只允许做多信号的结构标签（参考 ai_quant_strategy.py）
+        allowed_structure_labels = ["TREND_UP", "BREAKOUT_UP", "REVERSAL_UP"]
+    
+    logger.info(f"应用信号过滤器（最小质量评分={min_quality_score}, 最小盈亏比={min_risk_reward}, 允许的结构标签={allowed_structure_labels}）...")
     
     filtered_signals = []
     skipped_count = 0
@@ -240,6 +311,17 @@ def apply_signal_filters(df, enhanced_signals,
             skipped_count += 1
             continue
         
+        # 结构标签检查（参考 ai_quant_strategy.py：只在特定结构下生成信号）
+        structure_label = get_value_safe(item, 'structure_label', None)
+        if structure_label is None:
+            # 尝试从LLM输出中获取
+            llm = get_value_safe(item, 'llm', {})
+            structure_label = get_value_safe(llm, 'structure_label', None) or get_value_safe(llm, 'rule_structure_label', None)
+        
+        if structure_label not in allowed_structure_labels:
+            skipped_count += 1
+            continue
+        
         # LLM 信号检查
         llm = get_value_safe(item, 'llm', {})
         signal = get_value_safe(llm, 'signal', 'Neutral') if isinstance(llm, dict) else 'Neutral'
@@ -248,6 +330,11 @@ def apply_signal_filters(df, enhanced_signals,
             llm_score = int(float(raw_score))
         except:
             llm_score = 0
+        
+        # 结构置信度检查（如果使用LLM）
+        if llm_score < structure_confidence_threshold:
+            skipped_count += 1
+            continue
         
         # LLM 信号检查（如果 USE_LLM=False，signal 可能是 'Neutral'，需要特殊处理）
         if signal != 'Long':

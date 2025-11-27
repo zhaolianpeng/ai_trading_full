@@ -6,3 +6,4 @@ matplotlib
 yfinance
 ccxt
 pytz
+scikit-learn>=1.0.0

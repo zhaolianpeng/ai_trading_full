@@ -163,65 +163,124 @@ def main():
                     # 如果没有1h数据，使用第一个可用的时间周期
                     df = list(multi_timeframe_data.values())[0] if multi_timeframe_data else df
                 
-                # 将多时间周期确认的信号转换为标准格式，并进行LLM分析
+                # 将多时间周期确认的信号转换为标准格式，并进行LLM分析（并发处理）
                 enhanced = []
                 from strategy.strategy_runner import build_feature_packet
                 from ai_agent.signal_interpret import interpret_with_llm
                 from config import LLM_PROVIDER, DEEPSEEK_MODEL, OPENAI_MODEL, OPENAI_TEMPERATURE, OPENAI_MAX_TOKENS
+                from concurrent.futures import ThreadPoolExecutor, as_completed
                 
-                for combined_signal in combined_signals:
+                # 准备所有信号的数据
+                signal_data_list = []
+                for i, combined_signal in enumerate(combined_signals):
                     base_signal = combined_signal['base_signal']
                     signal_idx = base_signal.get('idx', -1)
                     
-                    # 构建特征包（使用1h数据）
                     if signal_idx >= 0 and signal_idx < len(df):
                         packet = build_feature_packet(df, signal_idx)
-                        
-                        # LLM分析
-                        model = DEEPSEEK_MODEL if LLM_PROVIDER == 'deepseek' else OPENAI_MODEL
-                        try:
-                            llm_out = interpret_with_llm(
-                                packet,
-                                provider=LLM_PROVIDER,
-                                model=model,
-                                use_llm=USE_LLM,
-                                temperature=OPENAI_TEMPERATURE,
-                                max_tokens=OPENAI_MAX_TOKENS
-                            )
-                        except Exception as e:
-                            error_msg = str(e)
-                            error_type = type(e).__name__
-                            logger.warning(f"LLM分析失败: {error_type}: {error_msg}，使用fallback")
-                            try:
-                                llm_out = interpret_with_llm(packet, provider=LLM_PROVIDER, model=model, use_llm=False)
-                            except Exception as fallback_error:
-                                logger.error(f"Fallback也失败: {fallback_error}")
-                                llm_out = {
-                                    'trend_structure': 'Neutral',
-                                    'signal': 'Neutral',
-                                    'score': 0,
-                                    'confidence': 'Low',
-                                    'explanation': 'Error in LLM interpretation',
-                                    'risk': 'Unknown'
-                                }
-                        
-                        # 添加时间戳
                         signal_time = None
                         if isinstance(df.index, pd.DatetimeIndex) and signal_idx < len(df.index):
                             signal_time = df.index[signal_idx]
                         
-                        # 构建增强信号
-                        enhanced_signal = {
-                            'rule': base_signal,
-                            'feature_packet': packet,
-                            'llm': llm_out,
-                            'signal_time': signal_time.isoformat() if signal_time else None,
-                            'multi_timeframe': {
-                                'confirmations': combined_signal['confirmed_timeframes'],
-                                'confirmation_count': combined_signal['confirmation_count']
+                        signal_data_list.append({
+                            'index': i,
+                            'combined_signal': combined_signal,
+                            'base_signal': base_signal,
+                            'packet': packet,
+                            'signal_time': signal_time
+                        })
+                
+                # 并发处理LLM调用
+                model = DEEPSEEK_MODEL if LLM_PROVIDER == 'deepseek' else OPENAI_MODEL
+                max_workers = int(os.getenv('LLM_CONCURRENT_WORKERS', '5'))
+                
+                def process_multi_timeframe_signal(signal_data):
+                    """处理单个多时间周期信号的LLM调用"""
+                    i = signal_data['index']
+                    combined_signal = signal_data['combined_signal']
+                    base_signal = signal_data['base_signal']
+                    packet = signal_data['packet']
+                    signal_time = signal_data['signal_time']
+                    
+                    try:
+                        llm_out = interpret_with_llm(
+                            packet,
+                            provider=LLM_PROVIDER,
+                            model=model,
+                            use_llm=USE_LLM,
+                            temperature=OPENAI_TEMPERATURE,
+                            max_tokens=OPENAI_MAX_TOKENS
+                        )
+                    except Exception as e:
+                        error_msg = str(e)
+                        error_type = type(e).__name__
+                        logger.warning(f"LLM分析失败 (信号 {i+1}/{len(combined_signals)}): {error_type}: {error_msg}，使用fallback")
+                        try:
+                            llm_out = interpret_with_llm(packet, provider=LLM_PROVIDER, model=model, use_llm=False)
+                        except Exception as fallback_error:
+                            logger.error(f"Fallback也失败: {fallback_error}")
+                            llm_out = {
+                                'trend_structure': 'Neutral',
+                                'signal': 'Neutral',
+                                'score': 0,
+                                'confidence': 'Low',
+                                'explanation': 'Error in LLM interpretation',
+                                'risk': 'Unknown'
                             }
+                    
+                    return {
+                        'index': i,
+                        'rule': base_signal,
+                        'feature_packet': packet,
+                        'llm': llm_out,
+                        'signal_time': signal_time.isoformat() if signal_time else None,
+                        'multi_timeframe': {
+                            'confirmations': combined_signal['confirmed_timeframes'],
+                            'confirmation_count': combined_signal['confirmation_count']
                         }
-                        enhanced.append(enhanced_signal)
+                    }
+                
+                # 使用线程池并发处理
+                if len(signal_data_list) > 0:
+                    logger.info(f"使用 {max_workers} 个并发线程处理 {len(signal_data_list)} 个多时间周期信号的LLM分析...")
+                    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                        future_to_signal = {executor.submit(process_multi_timeframe_signal, signal_data): signal_data 
+                                           for signal_data in signal_data_list}
+                        
+                        completed = 0
+                        results = {}
+                        for future in as_completed(future_to_signal):
+                            completed += 1
+                            try:
+                                result = future.result()
+                                results[result['index']] = result
+                            except Exception as e:
+                                signal_data = future_to_signal[future]
+                                logger.error(f"处理信号 {signal_data['index']+1} 时发生异常: {e}")
+                                results[signal_data['index']] = {
+                                    'index': signal_data['index'],
+                                    'rule': signal_data['base_signal'],
+                                    'feature_packet': signal_data['packet'],
+                                    'llm': {
+                                        'trend_structure': 'Neutral',
+                                        'signal': 'Neutral',
+                                        'score': 0,
+                                        'confidence': 'Low',
+                                        'explanation': 'Error in processing',
+                                        'risk': 'Unknown'
+                                    },
+                                    'signal_time': signal_data['signal_time'].isoformat() if signal_data['signal_time'] else None,
+                                    'multi_timeframe': {
+                                        'confirmations': signal_data['combined_signal']['confirmed_timeframes'],
+                                        'confirmation_count': signal_data['combined_signal']['confirmation_count']
+                                    }
+                                }
+                            
+                            if completed % 10 == 0 or completed == len(signal_data_list):
+                                logger.info(f"已处理 {completed}/{len(signal_data_list)} 个多时间周期信号...")
+                        
+                        # 按原始顺序排序结果
+                        enhanced = [results[i] for i in sorted(results.keys())]
                 
                 logger.info(f"转换后共有 {len(enhanced)} 个多时间周期确认的信号（已进行LLM分析）")
             else:
@@ -335,13 +394,14 @@ def main():
                 from utils.time_utils import to_beijing_time
                 entry_time_str = to_beijing_time(entry_point['entry_time'])
                 
+                # 直接使用中文关键字，避免翻译歧义
                 signal['best_entry_3m'] = {
-                    'entry_time': entry_time_str,
-                    'entry_price': entry_point['entry_price'],
-                    'entry_reason': entry_point['entry_reason'],
-                    'entry_score': entry_point['entry_score']
+                    '入场时间': entry_time_str,
+                    '入场价格': entry_point['entry_price'],
+                    '入场原因': entry_point['entry_reason'],
+                    '入场评分': entry_point['entry_score']
                 }
-                logger.info(f"信号 {signal_idx}: 找到3分钟入场点，价格={entry_point['entry_price']:.2f}, 时间={entry_time_str}")
+                logger.info(f"信号 {signal_idx}: 找到短周期入场点，价格={entry_point['entry_price']:.2f}, 时间={entry_time_str}")
         
         # 3.5. 保存信号日志（使用中文关键字，并转换为北京时间）
         output_dir = Path(OUTPUT_DIR)
