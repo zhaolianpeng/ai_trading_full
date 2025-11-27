@@ -13,6 +13,7 @@ MARKET_PERIOD = os.getenv('MARKET_PERIOD', '1y')  # 数据周期（Yahoo Finance
 MARKET_INTERVAL = os.getenv('MARKET_INTERVAL', '1h')  # 数据间隔（Yahoo Finance: '1m', '5m', '15m', '30m', '1h', '1d'等）
 MARKET_TIMEFRAME = os.getenv('MARKET_TIMEFRAME', '1h')  # 时间框架（Binance: '1m', '5m', '15m', '30m', '1h', '4h', '1d', '1w'）
 MARKET_LIMIT = int(os.getenv('MARKET_LIMIT', '1000'))  # 最大数据条数（Binance，最大1000）
+MARKET_TYPE = os.getenv('MARKET_TYPE', 'future')  # 市场类型: 'spot'（现货）或 'future'（永续合约），默认 'future'
 SIGNAL_LOOKBACK_DAYS = int(os.getenv('SIGNAL_LOOKBACK_DAYS', '7'))  # 信号倒推天数（默认7天，即1周）
 SYNTHETIC_DATA_SIZE = int(os.getenv('SYNTHETIC_DATA_SIZE', '1500'))  # 合成数据大小
 USE_ADVANCED_TA = os.getenv('USE_ADVANCED_TA', 'True').lower() == 'true'  # 是否使用高级技术指标
