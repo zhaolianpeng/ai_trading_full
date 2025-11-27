@@ -127,11 +127,12 @@ def call_openai_chat(prompt: str, model: str = 'gpt-4o-mini',
 
 def call_deepseek_chat(prompt: str, model: str = 'deepseek-reasoner', 
                       temperature: float = 0.0, max_tokens: int = 400,
-                      retry_count: int = 3) -> str:
+                      retry_count: int = 3, fallback_model: str = 'deepseek-chat') -> str:
     """
     调用 DeepSeek ChatCompletion API（使用 OpenAI 兼容接口）
     
     默认使用 deepseek-reasoner 推理模型，适合复杂分析场景。
+    如果 deepseek-reasoner 不可用，会自动尝试 fallback_model（默认 deepseek-chat）。
     
     Args:
         prompt: 提示词
@@ -139,6 +140,7 @@ def call_deepseek_chat(prompt: str, model: str = 'deepseek-reasoner',
         temperature: 温度参数（0-2）
         max_tokens: 最大token数
         retry_count: 重试次数（默认3次）
+        fallback_model: 如果主模型失败，尝试的备用模型（默认 'deepseek-chat'）
     
     Returns:
         LLM 返回的文本内容
@@ -147,6 +149,7 @@ def call_deepseek_chat(prompt: str, model: str = 'deepseek-reasoner',
         RuntimeError: API key 未设置或包未安装
         Exception: API 调用失败
     """
+    # 尝试使用主模型
     for attempt in range(retry_count):
         try:
             # 速率限制
@@ -167,11 +170,31 @@ def call_deepseek_chat(prompt: str, model: str = 'deepseek-reasoner',
             error_msg = str(e)
             error_type = type(e).__name__
             
+            # 检查是否是模型不存在错误（404, model not found等）
+            is_model_not_found = ('404' in error_msg or 
+                                 'model' in error_msg.lower() and 'not found' in error_msg.lower() or
+                                 'invalid model' in error_msg.lower() or
+                                 'unknown model' in error_msg.lower())
+            
             # 检查是否是空响应错误
             is_empty_response = 'empty response' in error_msg.lower() or 'Empty response' in error_msg
             
             # 检查是否是限流错误（429）
-            is_rate_limit = '429' in error_msg or 'rate limit' in error_msg.lower() or 'quota' in error_msg.lower() or 'insufficient balance' in error_msg.lower()
+            is_rate_limit = ('429' in error_msg or 
+                           'rate limit' in error_msg.lower() or 
+                           'quota' in error_msg.lower() or 
+                           'insufficient balance' in error_msg.lower())
+            
+            # 如果是模型不存在错误，且是第一次尝试，尝试使用fallback模型
+            if is_model_not_found and attempt == 0 and fallback_model and fallback_model != model:
+                logger.warning(f"DeepSeek模型 {model} 不可用: {error_msg}，尝试使用备用模型 {fallback_model}")
+                try:
+                    return call_deepseek_chat(prompt, model=fallback_model, temperature=temperature, 
+                                            max_tokens=max_tokens, retry_count=retry_count, 
+                                            fallback_model=None)  # 避免无限递归
+                except Exception as fallback_error:
+                    logger.error(f"备用模型 {fallback_model} 也失败: {fallback_error}")
+                    # 继续使用原模型的重试逻辑
             
             # 空响应或余额不足时，不重试，直接抛出异常（让上层使用fallback）
             if is_empty_response or is_rate_limit:
