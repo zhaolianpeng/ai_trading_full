@@ -103,17 +103,23 @@ def call_openai_chat(prompt: str, model: str = 'gpt-4o-mini',
             error_msg = str(e)
             error_type = type(e).__name__
             
+            # 检查是否是空响应错误
+            is_empty_response = 'empty response' in error_msg.lower() or 'Empty response' in error_msg
+            
             # 检查是否是限流错误（429）
-            is_rate_limit = '429' in error_msg or 'rate limit' in error_msg.lower() or 'quota' in error_msg.lower()
+            is_rate_limit = '429' in error_msg or 'rate limit' in error_msg.lower() or 'quota' in error_msg.lower() or 'insufficient balance' in error_msg.lower()
+            
+            # 空响应或余额不足时，不重试，直接抛出异常（让上层使用fallback）
+            if is_empty_response or is_rate_limit:
+                if attempt == 0:  # 第一次尝试就失败
+                    logger.warning(f"OpenAI API返回空响应或余额不足 (model={model}): {error_msg}，跳过重试，使用fallback")
+                else:
+                    logger.warning(f"OpenAI API返回空响应或余额不足 (attempt {attempt+1}/{retry_count}): {error_msg}，跳过重试，使用fallback")
+                raise  # 直接抛出，让上层使用fallback
             
             if attempt < retry_count - 1:
-                # 限流错误使用更长的等待时间
-                if is_rate_limit:
-                    wait_time = 10 + (2 ** attempt)  # 限流时等待更长时间
-                    logger.warning(f"OpenAI API限流 (attempt {attempt+1}/{retry_count}): {error_msg}. 等待 {wait_time}s 后重试...")
-                else:
-                    wait_time = 2 ** attempt  # 指数退避
-                    logger.warning(f"OpenAI API调用失败 (attempt {attempt+1}/{retry_count}): {error_type}: {error_msg}. 等待 {wait_time}s 后重试...")
+                wait_time = 2 ** attempt  # 指数退避
+                logger.warning(f"OpenAI API调用失败 (attempt {attempt+1}/{retry_count}): {error_type}: {error_msg}. 等待 {wait_time}s 后重试...")
                 time.sleep(wait_time)
             else:
                 logger.error(f"OpenAI API调用失败，已重试 {retry_count} 次: {error_type}: {error_msg}")
@@ -161,17 +167,23 @@ def call_deepseek_chat(prompt: str, model: str = 'deepseek-reasoner',
             error_msg = str(e)
             error_type = type(e).__name__
             
+            # 检查是否是空响应错误
+            is_empty_response = 'empty response' in error_msg.lower() or 'Empty response' in error_msg
+            
             # 检查是否是限流错误（429）
-            is_rate_limit = '429' in error_msg or 'rate limit' in error_msg.lower() or 'quota' in error_msg.lower()
+            is_rate_limit = '429' in error_msg or 'rate limit' in error_msg.lower() or 'quota' in error_msg.lower() or 'insufficient balance' in error_msg.lower()
+            
+            # 空响应或余额不足时，不重试，直接抛出异常（让上层使用fallback）
+            if is_empty_response or is_rate_limit:
+                if attempt == 0:  # 第一次尝试就失败
+                    logger.warning(f"DeepSeek API返回空响应或余额不足 (model={model}): {error_msg}，跳过重试，使用fallback")
+                else:
+                    logger.warning(f"DeepSeek API返回空响应或余额不足 (attempt {attempt+1}/{retry_count}): {error_msg}，跳过重试，使用fallback")
+                raise  # 直接抛出，让上层使用fallback
             
             if attempt < retry_count - 1:
-                # 限流错误使用更长的等待时间
-                if is_rate_limit:
-                    wait_time = 10 + (2 ** attempt)  # 限流时等待更长时间
-                    logger.warning(f"DeepSeek API限流 (attempt {attempt+1}/{retry_count}): {error_msg}. 等待 {wait_time}s 后重试...")
-                else:
-                    wait_time = 2 ** attempt  # 指数退避
-                    logger.warning(f"DeepSeek API调用失败 (attempt {attempt+1}/{retry_count}): {error_type}: {error_msg}. 等待 {wait_time}s 后重试...")
+                wait_time = 2 ** attempt  # 指数退避
+                logger.warning(f"DeepSeek API调用失败 (attempt {attempt+1}/{retry_count}): {error_type}: {error_msg}. 等待 {wait_time}s 后重试...")
                 time.sleep(wait_time)
             else:
                 logger.error(f"DeepSeek API调用失败，已重试 {retry_count} 次: {error_type}: {error_msg}")
