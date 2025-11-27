@@ -26,7 +26,20 @@ OPENAI_MODEL = os.getenv('OPENAI_MODEL', 'gpt-4o-mini')  # OpenAI 模型（如 '
 DEEPSEEK_MODEL = os.getenv('DEEPSEEK_MODEL', 'deepseek-reasoner')  # DeepSeek 模型（如 'deepseek-chat', 'deepseek-reasoner'）
 OPENAI_TEMPERATURE = float(os.getenv('OPENAI_TEMPERATURE', '0.0'))  # LLM 温度参数
 OPENAI_MAX_TOKENS = int(os.getenv('OPENAI_MAX_TOKENS', '400'))  # LLM 最大token数
-LLM_CONCURRENT_WORKERS = int(os.getenv('LLM_CONCURRENT_WORKERS', '5'))  # LLM并发处理线程数（默认5，可根据API限制调整）
+
+# LLM并发处理线程数：根据提供商动态调整
+# DeepSeek 没有限速，可以使用更高的并发数（默认20）
+# OpenAI 有限速，使用较低的并发数（默认5）
+_LLM_CONCURRENT_WORKERS_ENV = os.getenv('LLM_CONCURRENT_WORKERS')
+if _LLM_CONCURRENT_WORKERS_ENV:
+    # 如果用户明确指定了并发数，使用用户指定的值
+    LLM_CONCURRENT_WORKERS = int(_LLM_CONCURRENT_WORKERS_ENV)
+else:
+    # 根据提供商自动调整默认值
+    if LLM_PROVIDER == 'deepseek':
+        LLM_CONCURRENT_WORKERS = 20  # DeepSeek 没有限速，可以使用更高并发
+    else:
+        LLM_CONCURRENT_WORKERS = 5   # OpenAI 有限速，使用较低并发
 
 # ==================== 回测配置 ====================
 BACKTEST_MAX_HOLD = int(os.getenv('BACKTEST_MAX_HOLD', '20'))  # 最大持仓周期

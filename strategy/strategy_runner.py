@@ -307,8 +307,9 @@ def run_strategy(
     
     enhanced_signals = []
     
-    # 获取并发数配置（默认5，可以通过环境变量调整）
-    max_workers = int(os.getenv('LLM_CONCURRENT_WORKERS', '5'))
+    # 获取并发数配置（根据LLM提供商自动调整，或使用环境变量指定）
+    from config import LLM_CONCURRENT_WORKERS
+    max_workers = LLM_CONCURRENT_WORKERS
     
     # 准备所有信号的数据
     signal_data_list = []

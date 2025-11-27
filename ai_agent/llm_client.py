@@ -20,7 +20,9 @@ _deepseek_client: Optional[OpenAI] = None
 
 # 全局请求计数器（用于限流控制）
 _last_request_time: dict = {}
-_min_request_interval = 0.1  # 最小请求间隔（秒），避免过快请求
+# 最小请求间隔（秒），避免过快请求
+# DeepSeek 没有限速，可以使用更小的间隔；OpenAI 有限速，使用较大的间隔
+_min_request_interval = 0.05  # 降低到 0.05 秒，提高并发效率
 
 def get_openai_client() -> OpenAI:
     """获取或创建 OpenAI 客户端实例"""

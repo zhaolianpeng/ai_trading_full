@@ -235,7 +235,8 @@ def main() -> int:
                 
                 # 并发处理LLM调用
                 model = DEEPSEEK_MODEL if LLM_PROVIDER == 'deepseek' else OPENAI_MODEL
-                max_workers = int(os.getenv('LLM_CONCURRENT_WORKERS', '5'))
+                from config import LLM_CONCURRENT_WORKERS
+                max_workers = LLM_CONCURRENT_WORKERS
                 
                 def process_multi_timeframe_signal(signal_data):
                     """处理单个多时间周期信号的LLM调用"""
