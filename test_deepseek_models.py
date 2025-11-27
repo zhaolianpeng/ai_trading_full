@@ -45,16 +45,35 @@ print("=" * 60)
 for model in models_to_test:
     print(f"\n测试模型: {model}")
     try:
+        # 对于推理模型，使用更大的 max_tokens
+        test_max_tokens = 800 if 'reasoner' in model else 10
+        
         response = client.chat.completions.create(
             model=model,
             messages=[{"role": "user", "content": "Hello"}],
-            max_tokens=10
+            max_tokens=test_max_tokens,
+            stream=False
         )
+        
+        # 检查响应结构
+        if not response or not response.choices:
+            print(f"  ❌ {model} 响应结构无效")
+            continue
+            
         txt = response.choices[0].message.content
+        finish_reason = response.choices[0].finish_reason if hasattr(response.choices[0], 'finish_reason') else None
+        
         if txt:
             print(f"  ✅ {model} 可用 - 响应: {txt[:50]}")
+            if finish_reason:
+                print(f"     完成原因: {finish_reason}")
         else:
             print(f"  ⚠️  {model} 返回空响应")
+            if finish_reason:
+                print(f"     完成原因: {finish_reason}")
+            # 尝试获取更多信息
+            if hasattr(response, 'usage'):
+                print(f"     使用情况: {response.usage}")
     except Exception as e:
         error_msg = str(e)
         error_type = type(e).__name__

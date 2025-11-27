@@ -156,15 +156,41 @@ def call_deepseek_chat(prompt: str, model: str = 'deepseek-reasoner',
             _rate_limit_wait('deepseek')
             
             client = get_deepseek_client()
+            
+            # 对于 deepseek-reasoner，可能需要更长的等待时间和更大的 max_tokens
+            # 因为推理模型需要更多时间处理
+            adjusted_max_tokens = max_tokens
+            if model == 'deepseek-reasoner':
+                # 推理模型可能需要更多token来返回完整结果
+                adjusted_max_tokens = max(max_tokens, 800)
+            
             response = client.chat.completions.create(
                 model=model,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=temperature,
-                max_tokens=max_tokens
+                max_tokens=adjusted_max_tokens,
+                stream=False  # 明确指定非流式响应
             )
+            
+            # 检查响应结构
+            if not response or not response.choices:
+                raise ValueError(f"Invalid response structure from DeepSeek API (model={model})")
+            
             txt = response.choices[0].message.content
+            
+            # 对于 deepseek-reasoner，如果返回空响应，可能是还在处理中
+            # 检查是否有 finish_reason
+            finish_reason = response.choices[0].finish_reason if hasattr(response.choices[0], 'finish_reason') else None
+            
             if txt is None or txt.strip() == '':
-                raise ValueError(f"Empty response from DeepSeek API (model={model})")
+                # 如果 finish_reason 是 'length'，说明响应被截断了，但至少有一些内容
+                if finish_reason == 'length':
+                    logger.warning(f"DeepSeek API响应被截断 (model={model}, finish_reason=length)，可能需要增加max_tokens")
+                    raise ValueError(f"Response truncated from DeepSeek API (model={model}), try increasing max_tokens")
+                else:
+                    logger.warning(f"DeepSeek API返回空响应 (model={model}, finish_reason={finish_reason})")
+                    raise ValueError(f"Empty response from DeepSeek API (model={model}, finish_reason={finish_reason})")
+            
             return txt.strip()
         except Exception as e:
             error_msg = str(e)
