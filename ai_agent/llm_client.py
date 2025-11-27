@@ -158,11 +158,12 @@ def call_deepseek_chat(prompt: str, model: str = 'deepseek-reasoner',
             client = get_deepseek_client()
             
             # 对于 deepseek-reasoner，可能需要更长的等待时间和更大的 max_tokens
-            # 因为推理模型需要更多时间处理
+            # 因为推理模型需要更多时间处理，且输出通常更长
             adjusted_max_tokens = max_tokens
             if model == 'deepseek-reasoner':
                 # 推理模型可能需要更多token来返回完整结果
-                adjusted_max_tokens = max(max_tokens, 800)
+                # 默认至少 1600，因为推理模型的输出通常很长
+                adjusted_max_tokens = max(max_tokens, 1600)
             
             response = client.chat.completions.create(
                 model=model,
@@ -185,11 +186,20 @@ def call_deepseek_chat(prompt: str, model: str = 'deepseek-reasoner',
             if txt is None or txt.strip() == '':
                 # 如果 finish_reason 是 'length'，说明响应被截断了，但至少有一些内容
                 if finish_reason == 'length':
-                    logger.warning(f"DeepSeek API响应被截断 (model={model}, finish_reason=length)，可能需要增加max_tokens")
-                    raise ValueError(f"Response truncated from DeepSeek API (model={model}), try increasing max_tokens")
+                    logger.warning(f"DeepSeek API响应被截断 (model={model}, finish_reason=length)，但返回内容为空")
+                    raise ValueError(f"Response truncated from DeepSeek API (model={model}), but content is empty")
                 else:
                     logger.warning(f"DeepSeek API返回空响应 (model={model}, finish_reason={finish_reason})")
                     raise ValueError(f"Empty response from DeepSeek API (model={model}, finish_reason={finish_reason})")
+            
+            # 如果 finish_reason 是 'length'，说明响应被截断了，但至少有一些内容
+            # 对于这种情况，我们仍然返回已返回的内容（即使被截断），而不是抛出异常
+            # 因为部分内容总比没有内容好，上层可以处理不完整的响应
+            if finish_reason == 'length':
+                logger.warning(f"DeepSeek API响应被截断 (model={model}, finish_reason=length, max_tokens={adjusted_max_tokens})，返回部分内容")
+                logger.warning(f"   建议：如果响应不完整，可以增加 OPENAI_MAX_TOKENS 配置（当前: {max_tokens} -> 建议: {adjusted_max_tokens * 2}）")
+                # 仍然返回已返回的内容，让上层决定如何处理
+                return txt.strip()
             
             return txt.strip()
         except Exception as e:
