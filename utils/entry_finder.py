@@ -208,20 +208,35 @@ def find_best_entry_point_3m(
                         score -= 10  # 成交量萎缩，扣分
                         reasons.append(f"成交量萎缩{vol_ratio:.2f}x")
                 
-                # 3. 距离信号时间（越近越好，但不要太远）
-                time_diff = (entry_time - signal_time).total_seconds() / 60  # 分钟
-                if 0 <= time_diff <= 15:  # 0-15分钟，最佳
+                # 3. 距离信号时间（越近越好，在8小时窗口内）
+                time_diff_minutes = (entry_time - signal_time).total_seconds() / 60  # 分钟
+                time_diff_hours = abs(time_diff_minutes) / 60  # 小时
+                
+                # 如果超过8小时，跳过这个K线
+                if time_diff_hours > max_time_window_hours:
+                    continue
+                
+                # 距离信号时间越近，评分越高
+                if abs(time_diff_minutes) <= 15:  # 0-15分钟，最佳
+                    score += 30
+                    reasons.append(f"距离信号{abs(time_diff_minutes):.0f}分钟")
+                elif abs(time_diff_minutes) <= 30:  # 15-30分钟
+                    score += 25
+                    reasons.append(f"距离信号{abs(time_diff_minutes):.0f}分钟")
+                elif abs(time_diff_minutes) <= 60:  # 30-60分钟
                     score += 20
-                    reasons.append(f"距离信号{time_diff:.0f}分钟")
-                elif 15 < time_diff <= 30:  # 15-30分钟
+                    reasons.append(f"距离信号{abs(time_diff_minutes):.0f}分钟")
+                elif abs(time_diff_minutes) <= 120:  # 1-2小时
                     score += 15
-                    reasons.append(f"距离信号{time_diff:.0f}分钟")
-                elif 30 < time_diff <= 45:  # 30-45分钟
+                    reasons.append(f"距离信号{time_diff_hours:.1f}小时")
+                elif abs(time_diff_minutes) <= 240:  # 2-4小时
                     score += 10
-                    reasons.append(f"距离信号{time_diff:.0f}分钟")
-                else:  # 超过45分钟，扣分
-                    score -= 5
-                    reasons.append(f"距离信号{time_diff:.0f}分钟")
+                    reasons.append(f"距离信号{time_diff_hours:.1f}小时")
+                elif abs(time_diff_minutes) <= 480:  # 4-8小时
+                    score += 5
+                    reasons.append(f"距离信号{time_diff_hours:.1f}小时")
+                else:  # 超过8小时（不应该到这里，但保险起见）
+                    continue
                 
                 # 4. K线形态（下影线长表示有支撑）
                 if row['close'] > row['open']:  # 阳线
