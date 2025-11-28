@@ -590,9 +590,9 @@ def main() -> int:
                 min_quality = int(os.getenv('MIN_QUALITY_SCORE', '40'))  # 提高到40（从25），只接受高质量信号
                 min_conf = int(os.getenv('MIN_CONFIRMATIONS', '2'))  # 提高到2（从1），需要更多确认
                 min_rr = float(os.getenv('MIN_RISK_REWARD', '1.5'))  # 保持1.5（用户要求）
-                min_llm = int(os.getenv('MIN_LLM_SCORE', '70'))  # 提高到70+（从60），只接受最高质量LLM信号
+                min_llm = int(os.getenv('MIN_LLM_SCORE', '60'))  # 提高到60（从40），只接受高质量LLM信号（用户要求60+）
                 logger.info(f"回测模式过滤阈值: 质量评分>={min_quality}, 确认数>={min_conf}, 盈亏比>={min_rr}, LLM评分>={min_llm}")
-                logger.info("注意：大幅提高过滤标准，强制要求EMA多头排列和成交量放大，减少持仓0周期止损，提升胜率")
+                logger.info("注意：大幅提高过滤标准，强制要求EMA多头排列、成交量放大和趋势强度>60，优化入场时机，减少持仓0周期止损，提升胜率")
             else:
                 # 使用交易模式配置的参数，但允许环境变量覆盖
                 min_quality = int(os.getenv('MIN_QUALITY_SCORE', mode_config['min_quality_score']))

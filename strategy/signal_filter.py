@@ -482,20 +482,17 @@ def apply_signal_filters(df, enhanced_signals,
         else:
             filter_failed_reasons.append("EMA数据缺失（强制要求）")
         
-        # 3. 趋势强度（回测模式下大幅降低或取消要求）
+        # 3. 趋势强度（强制要求，确保只在明确趋势方向交易）
         try:
             # 使用最近50根K线计算趋势强度
             trend_strength = calculate_trend_strength(df.iloc[max(0, idx-49):idx+1], n=min(50, idx+1))
-            # 回测模式下，完全取消趋势强度要求（允许所有信号通过）
-            if not backtest_mode:
-                min_trend_strength = 50
-                if trend_strength <= min_trend_strength:
-                    filter_failed_reasons.append(f"趋势强度不足({trend_strength:.1f} <= {min_trend_strength})")
+            # 强制要求趋势强度（回测模式和非回测模式都要求）
+            min_trend_strength = 60  # 提高到60，确保只在明确的趋势中交易
+            if trend_strength <= min_trend_strength:
+                filter_failed_reasons.append(f"趋势强度不足({trend_strength:.1f} <= {min_trend_strength}，强制要求)")
         except Exception as e:
             logger.warning(f"计算趋势强度失败: {e}")
-            # 回测模式下，计算失败不阻止交易
-            if not backtest_mode:
-                filter_failed_reasons.append("趋势强度计算失败")
+            filter_failed_reasons.append("趋势强度计算失败（强制要求）")
         
         # 4. 突破有效性 = VALID（回测模式下大幅放宽或取消要求）
         # 检查是否有突破信号，如果有，验证其有效性

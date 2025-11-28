@@ -175,6 +175,7 @@ def find_best_entry_point_3m(
         # 在信号时间前后max_time_window_hours小时内查找最佳入场点
         best_entry = None
         best_score = -float('inf')
+        min_entry_score = 50  # 最低入场评分要求，只接受高质量入场点
         
         # 计算查找范围：在信号时间前后max_time_window_hours小时内
         # 对于5分钟K线，8小时 = 96个K线，前后各96个，总共最多192个K线
@@ -204,19 +205,26 @@ def find_best_entry_point_3m(
                 
                 # 评分因素：
                 # 1. 价格相对信号价格的回调（适度回调更好，但不能太深）
+                # 优化：更严格地要求回调，避免在价格高位入场
                 price_change = (entry_price - signal_price) / signal_price
-                if -0.01 < price_change <= 0:  # 0-1%的回调，最佳
-                    score += 35
+                if -0.005 < price_change <= 0:  # 0-0.5%的回调，最佳（更严格）
+                    score += 40
+                    reasons.append(f"价格回调{abs(price_change)*100:.2f}%（最佳）")
+                elif -0.01 < price_change <= -0.005:  # 0.5-1%的回调，良好
+                    score += 30
                     reasons.append(f"价格回调{abs(price_change)*100:.2f}%")
-                elif -0.02 < price_change <= -0.01:  # 1-2%的回调
-                    score += 25
+                elif -0.02 < price_change <= -0.01:  # 1-2%的回调，可接受
+                    score += 20
                     reasons.append(f"价格回调{abs(price_change)*100:.2f}%")
-                elif -0.03 < price_change <= -0.02:  # 2-3%的回调
-                    score += 15
-                    reasons.append(f"价格回调{abs(price_change)*100:.2f}%")
-                elif price_change > 0:  # 价格上涨，可能错过最佳时机
-                    score += 5
-                    reasons.append(f"价格上涨{price_change*100:.2f}%")
+                elif -0.03 < price_change <= -0.02:  # 2-3%的回调，较深
+                    score += 10
+                    reasons.append(f"价格回调{abs(price_change)*100:.2f}%（较深）")
+                elif price_change > 0:  # 价格上涨，可能错过最佳时机，降低评分
+                    score += 3
+                    reasons.append(f"价格上涨{price_change*100:.2f}%（非最佳）")
+                else:  # 回调超过3%，可能趋势已改变
+                    score -= 10
+                    reasons.append(f"价格回调过深{abs(price_change)*100:.2f}%")
                 
                 # 2. 成交量（成交量放大更好）
                 if 'volume' in row:
