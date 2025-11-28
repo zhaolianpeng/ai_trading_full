@@ -285,7 +285,20 @@ def run_strategy(
     
     logger.info("检测交易信号...")
     df_analysis_with_ta, signals = detect_rules(df_analysis, use_advanced_ta=use_advanced_ta, use_eric_indicators=use_eric_indicators)
-    logger.info(f"发现 {len(signals)} 个原始信号（在最近 {lookback_days} 天内）")
+    
+    # 计算实际分析的天数（用于日志显示）
+    if lookback_days is None:
+        # 如果lookback_days为None，尝试从数据中计算实际天数
+        if isinstance(df_analysis.index, pd.DatetimeIndex) and len(df_analysis) > 1:
+            time_span = df_analysis.index[-1] - df_analysis.index[0]
+            actual_days = time_span.days if time_span.days > 0 else (time_span.total_seconds() / 86400)
+            logger.info(f"发现 {len(signals)} 个原始信号（在全部数据中，约 {actual_days:.1f} 天）")
+        else:
+            # 无法计算天数，使用数据条数估算（假设小时级数据）
+            estimated_days = len(df_analysis) / 24
+            logger.info(f"发现 {len(signals)} 个原始信号（在全部数据中，约 {estimated_days:.1f} 天，{len(df_analysis)} 条数据）")
+    else:
+        logger.info(f"发现 {len(signals)} 个原始信号（在最近 {lookback_days} 天内）")
     
     if not signals:
         logger.warning("No signals detected. Try adjusting signal detection parameters or using more data.")
