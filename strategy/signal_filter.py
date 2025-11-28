@@ -338,7 +338,12 @@ def apply_signal_filters(df, enhanced_signals,
             llm_score = 0
         
         # 结构置信度检查（如果使用LLM）
-        if llm_score < structure_confidence_threshold:
+        # 回测模式下，大幅降低结构置信度要求
+        backtest_mode = os.getenv('BACKTEST_MODE', 'False').lower() == 'true' or \
+                       os.getenv('BACKTEST_FULL_DATA', 'False').lower() == 'true' or \
+                       os.getenv('BACKTEST_MONTHS', '0') != '0'
+        effective_threshold = 10 if backtest_mode else structure_confidence_threshold  # 回测模式降低到10
+        if llm_score < effective_threshold:
             skipped_count += 1
             continue
         
