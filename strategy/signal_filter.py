@@ -473,17 +473,14 @@ def apply_signal_filters(df, enhanced_signals,
         else:
             filter_failed_reasons.append("成交量数据缺失（强制要求）")
         
-        # 2. EMA 多头排列过滤（回测模式下大幅放宽或取消要求）
+        # 2. EMA 多头排列过滤（强制要求，回测模式和非回测模式都要求）
         if 'ema21' in df.columns and 'ema55' in df.columns and 'ema100' in df.columns:
             ema_bull = row['ema21'] > row['ema55'] > row['ema100']
-            # 回测模式下，完全取消EMA排列要求（允许所有信号通过）
-            if not backtest_mode:
-                if not ema_bull:
-                    filter_failed_reasons.append("EMA未形成多头排列")
+            # 强制要求EMA多头排列（回测模式和非回测模式都要求）
+            if not ema_bull:
+                filter_failed_reasons.append("EMA未形成多头排列（强制要求）")
         else:
-            # 回测模式下，EMA数据缺失不阻止交易
-            if not backtest_mode:
-                filter_failed_reasons.append("EMA数据缺失")
+            filter_failed_reasons.append("EMA数据缺失（强制要求）")
         
         # 3. 趋势强度（回测模式下大幅降低或取消要求）
         try:
