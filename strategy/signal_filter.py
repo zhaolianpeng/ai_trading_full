@@ -113,7 +113,6 @@ def filter_signal_quality(df, idx, signal_data, min_confirmations=2):
     
     # 3. 成交量确认（+15分）
     # 根据交易模式调整成交量阈值
-    import os
     volume_threshold = float(os.getenv('VOLUME_THRESHOLD', '1.2'))
     if 'vol_ma50' in df.columns and not pd.isna(row['vol_ma50']):
         vol_ratio = row['volume'] / row['vol_ma50'] if row['vol_ma50'] > 0 else 0
@@ -266,7 +265,6 @@ def filter_signal_quality(df, idx, signal_data, min_confirmations=2):
     # 判断是否有效（至少需要 min_confirmations 个确认）
     # 回测模式下，适度降低质量评分要求，但仍保持一定质量标准以提升胜率
     confirmations = len(reasons)
-    import os
     backtest_mode = os.getenv('BACKTEST_MODE', 'False').lower() == 'true' or \
                    os.getenv('BACKTEST_FULL_DATA', 'False').lower() == 'true' or \
                    os.getenv('BACKTEST_MONTHS', '0') != '0'
@@ -437,7 +435,6 @@ def apply_signal_filters(df, enhanced_signals,
         
         # 计算动态止损止盈，确保盈亏比 >= min_risk_reward
         # 回测模式下，放宽止损ATR倍数，避免被短期波动触发
-        import os
         backtest_mode = os.getenv('BACKTEST_MODE', 'False').lower() == 'true' or \
                        os.getenv('BACKTEST_FULL_DATA', 'False').lower() == 'true' or \
                        os.getenv('BACKTEST_MONTHS', '0') != '0'
