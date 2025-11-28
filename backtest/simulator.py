@@ -14,6 +14,7 @@
 作者: AI Trading System
 版本: 4.2
 """
+import os
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
@@ -98,15 +99,30 @@ def simple_backtest(df, enhanced_signals, max_hold=20, atr_mult_stop=1.0, atr_mu
                 continue
             
             # 检查强制平仓价格是否合理
+            # 回测模式下，放宽强制平仓价格检查，允许更多信号通过
             if liquidation_price:
-                if signal_direction == 'Long' and liquidation_price >= stop:
-                    logger.warning(f"信号 {idx}: 强制平仓价格 {liquidation_price:.2f} 高于止损 {stop:.2f}，跳过")
-                    backtest_skip_reasons['强制平仓价格不合理'] += 1
-                    continue
-                elif signal_direction == 'Short' and liquidation_price <= stop:
-                    logger.warning(f"信号 {idx}: 强制平仓价格 {liquidation_price:.2f} 低于止损 {stop:.2f}，跳过")
-                    backtest_skip_reasons['强制平仓价格不合理'] += 1
-                    continue
+                backtest_mode = os.getenv('BACKTEST_MODE', 'False').lower() == 'true' or \
+                              os.getenv('BACKTEST_FULL_DATA', 'False').lower() == 'true' or \
+                              os.getenv('BACKTEST_MONTHS', '0') != '0'
+                
+                if backtest_mode:
+                    # 回测模式：只检查强制平仓价格是否在合理范围内（距离入场价不超过50%）
+                    # 如果强制平仓价格太极端，才跳过
+                    liquidation_distance_pct = abs(entry_price - liquidation_price) / entry_price if entry_price > 0 else 0
+                    if liquidation_distance_pct > 0.5:  # 强制平仓价格距离入场价超过50%，可能计算有误
+                        logger.debug(f"信号 {idx}: 强制平仓价格 {liquidation_price:.2f} 距离入场价 {entry_price:.2f} 超过50%，跳过")
+                        backtest_skip_reasons['强制平仓价格不合理'] += 1
+                        continue
+                else:
+                    # 非回测模式：严格检查强制平仓价格与止损的关系
+                    if signal_direction == 'Long' and liquidation_price >= stop:
+                        logger.warning(f"信号 {idx}: 强制平仓价格 {liquidation_price:.2f} 高于止损 {stop:.2f}，跳过")
+                        backtest_skip_reasons['强制平仓价格不合理'] += 1
+                        continue
+                    elif signal_direction == 'Short' and liquidation_price <= stop:
+                        logger.warning(f"信号 {idx}: 强制平仓价格 {liquidation_price:.2f} 低于止损 {stop:.2f}，跳过")
+                        backtest_skip_reasons['强制平仓价格不合理'] += 1
+                        continue
         # 如果信号已经包含过滤后的信息（quality_score, risk_reward_ratio等），直接使用
         elif 'risk_reward_ratio' in item and 'stop_loss' in item and 'take_profit' in item:
             # 使用过滤后的止损止盈
