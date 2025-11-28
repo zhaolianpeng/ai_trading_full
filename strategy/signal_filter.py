@@ -297,7 +297,7 @@ def apply_signal_filters(df, enhanced_signals,
     Returns:
         过滤后的信号列表（包含质量评分和盈亏比信息）
     """
-        if allowed_structure_labels is None:
+    if allowed_structure_labels is None:
         # 默认允许做多和做空信号的结构标签
         # 支持双向交易：做多（Long）和做空（Short）
         backtest_mode = os.getenv('BACKTEST_MODE', 'False').lower() == 'true' or \
