@@ -397,13 +397,6 @@ def apply_signal_filters(df, enhanced_signals,
             skip_reasons_count['LLM信号不是Long/Short'] += 1
             logger.debug(f"信号 {idx} 被过滤: LLM信号={signal}（只接受Long/Short信号，拒绝中性信号）")
             continue
-                    # Neutral 但评分足够，可以继续
-                    pass
-                elif not is_high_freq:  # 高频交易信号允许通过
-                    skipped_count += 1
-                    skip_reasons_count['LLM信号不是Long/Short'] += 1
-                    logger.debug(f"信号 {idx} 被过滤: LLM信号={signal}（不是Long/Short），且不是高频交易信号")
-                    continue
         
         if llm_score < min_llm_score and not is_high_freq:  # 高频交易信号降低LLM评分要求
             skipped_count += 1
