@@ -783,7 +783,11 @@ def main() -> int:
             
             # 重新保存更新后的信号日志（转换为北京时间）
             from utils.time_utils import convert_dict_times_to_beijing
+            from utils.file_backup import backup_file_if_exists
             enhanced_cn = [convert_dict_times_to_beijing(signal) for signal in enhanced_cn]
+            
+            # 备份旧的信号日志文件（在更新之前）
+            backup_file_if_exists(signals_file)
             
             with open(signals_file, 'w', encoding='utf8') as f:
                 json.dump(enhanced_cn, f, ensure_ascii=False, indent=2, default=str)
