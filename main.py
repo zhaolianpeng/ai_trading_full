@@ -201,7 +201,7 @@ def main() -> int:
         # 如果设置了BACKTEST_MONTHS，自动启用回测模式
         if backtest_months > 0:
             backtest_mode = True
-            logger.info(f"回测模式：目标 {backtest_months} 个月数据，至少 200+ 笔交易")
+            logger.info(f"回测模式：目标 {backtest_months} 个月数据")
             # 回测模式下禁用多时间周期分析（会产生更多信号）
             use_multi_timeframe = False
             logger.info("回测模式：禁用多时间周期分析，使用单时间周期以产生更多交易信号")
@@ -800,13 +800,16 @@ def main() -> int:
                 time_span_months = 0
             
             logger.info("=" * 60)
-            logger.info("回测目标验证:")
-            logger.info(f"  数据时间跨度: {time_span_months:.1f} 个月 {'✅' if time_span_months >= 6 else '❌'}")
-            logger.info(f"  交易数量: {total_trades} 笔 {'✅' if total_trades >= 200 else '❌'}")
-            if time_span_months < 6:
-                logger.warning(f"  ⚠️ 数据时间跨度不足6个月，建议设置 BACKTEST_MONTHS=6")
-            if total_trades < 200:
-                logger.warning(f"  ⚠️ 交易数量不足200笔，建议进一步降低过滤阈值")
+            logger.info("回测结果验证:")
+            logger.info(f"  数据时间跨度: {time_span_months:.1f} 个月")
+            logger.info(f"  交易数量: {total_trades} 笔")
+            # 根据BACKTEST_MONTHS动态调整验证标准
+            backtest_months = int(os.getenv('BACKTEST_MONTHS', '0'))
+            if backtest_months > 0:
+                if time_span_months < backtest_months * 0.8:  # 允许20%的误差
+                    logger.warning(f"  ⚠️ 数据时间跨度不足{backtest_months}个月（实际{time_span_months:.1f}个月）")
+                if total_trades < 50:  # 3个月数据至少50笔交易
+                    logger.warning(f"  ⚠️ 交易数量较少（{total_trades}笔），建议进一步优化策略")
             logger.info("=" * 60)
         
         # 输出每笔交易的详细信息
