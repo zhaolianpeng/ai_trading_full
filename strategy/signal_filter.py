@@ -429,13 +429,14 @@ def apply_signal_filters(df, enhanced_signals,
             if not backtest_mode:
                 filter_failed_reasons.append("趋势强度计算失败")
         
-        # 4. 突破有效性 = VALID
+        # 4. 突破有效性 = VALID（回测模式下大幅放宽或取消要求）
         # 检查是否有突破信号，如果有，验证其有效性
         feature_packet = get_value_safe(item, 'feature_packet', {})
         has_breakout = get_value_safe(feature_packet, 'breakout', False)
         
-        if has_breakout:
-            # 验证突破有效性
+        # 回测模式下，完全取消突破有效性验证（允许所有突破信号通过）
+        if has_breakout and not backtest_mode:
+            # 验证突破有效性（仅非回测模式）
             breakout_valid = False
             breakout_fail_reason = None
             
@@ -472,6 +473,7 @@ def apply_signal_filters(df, enhanced_signals,
             if not breakout_valid and breakout_fail_reason:
                 filter_failed_reasons.append(breakout_fail_reason)
         # 如果没有突破信号，不需要验证突破有效性（允许非突破信号通过）
+        # 回测模式下，突破有效性验证完全取消
         
         # 如果任何强制过滤器失败，跳过该信号
         if filter_failed_reasons:
