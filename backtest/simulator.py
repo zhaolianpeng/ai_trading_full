@@ -379,6 +379,21 @@ def simple_backtest(df, enhanced_signals, max_hold=20, atr_mult_stop=1.0, atr_mu
         if isinstance(df.index, pd.DatetimeIndex) and entry_idx < len(df.index):
             trade_date = df.index[entry_idx].strftime('%Y-%m-%d')
             daily_trades[trade_date] = daily_trades.get(trade_date, 0) + 1
+    # 输出回测阶段的过滤统计
+    total_skipped_in_backtest = sum(backtest_skip_reasons.values())
+    if total_skipped_in_backtest > 0 or len(trades) < len(enhanced_signals):
+        logger.info("=" * 60)
+        logger.info("📊 回测阶段过滤统计详情：")
+        logger.info("=" * 60)
+        logger.info(f"  输入信号数: {len(enhanced_signals)}")
+        logger.info(f"  实际交易数: {len(trades)}")
+        logger.info(f"  回测阶段跳过: {total_skipped_in_backtest} 个")
+        for reason, count in backtest_skip_reasons.items():
+            if count > 0:
+                percentage = (count / len(enhanced_signals)) * 100 if len(enhanced_signals) > 0 else 0
+                logger.info(f"  {reason}: {count} 个 ({percentage:.1f}%)")
+        logger.info("=" * 60)
+    
     trades_df = pd.DataFrame(trades)
     if trades_df.empty:
         logger.warning("回测中未执行任何交易")
