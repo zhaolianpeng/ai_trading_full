@@ -50,6 +50,20 @@ def simple_backtest(df, enhanced_signals, max_hold=20, atr_mult_stop=1.0, atr_mu
     daily_trades = {}  # 记录每天的交易次数
     from utils.json_i18n import get_value_safe
     
+    # 统计回测阶段的过滤原因
+    backtest_skip_reasons = {
+        '索引超出范围': 0,
+        '盈亏比不足（合约）': 0,
+        '强制平仓价格不合理': 0,
+        '盈亏比不足（过滤后）': 0,
+        '信号不是Long/Short': 0,
+        'LLM评分不足': 0,
+        '索引超出范围（传统方式）': 0,
+        '风险为0': 0,
+        '重叠持仓': 0,
+        '其他原因': 0
+    }
+    
     for item in enhanced_signals:
         s = get_value_safe(item, 'rule', {})
         idx = get_value_safe(s, 'idx', 0)
@@ -87,9 +101,11 @@ def simple_backtest(df, enhanced_signals, max_hold=20, atr_mult_stop=1.0, atr_mu
             if liquidation_price:
                 if signal_direction == 'Long' and liquidation_price >= stop:
                     logger.warning(f"信号 {idx}: 强制平仓价格 {liquidation_price:.2f} 高于止损 {stop:.2f}，跳过")
+                    backtest_skip_reasons['强制平仓价格不合理'] += 1
                     continue
                 elif signal_direction == 'Short' and liquidation_price <= stop:
                     logger.warning(f"信号 {idx}: 强制平仓价格 {liquidation_price:.2f} 低于止损 {stop:.2f}，跳过")
+                    backtest_skip_reasons['强制平仓价格不合理'] += 1
                     continue
         # 如果信号已经包含过滤后的信息（quality_score, risk_reward_ratio等），直接使用
         elif 'risk_reward_ratio' in item and 'stop_loss' in item and 'take_profit' in item:
@@ -102,6 +118,7 @@ def simple_backtest(df, enhanced_signals, max_hold=20, atr_mult_stop=1.0, atr_mu
             
             # 再次检查盈亏比
             if risk_reward_ratio < min_risk_reward:
+                backtest_skip_reasons['盈亏比不足（过滤后）'] += 1
                 continue
             
             entry_price = df['close'].iloc[idx+1]
@@ -116,12 +133,15 @@ def simple_backtest(df, enhanced_signals, max_hold=20, atr_mult_stop=1.0, atr_mu
             # 支持Long和Short信号（高频交易可能产生Short信号）
             if signal not in ['Long', 'Short']:
                 if not is_high_freq or signal == 'Neutral':
+                    backtest_skip_reasons['信号不是Long/Short'] += 1
                     continue
             
             if not is_high_freq and score < min_llm_score:
+                backtest_skip_reasons['LLM评分不足'] += 1
                 continue
             
             if idx+1 >= len(df):
+                backtest_skip_reasons['索引超出范围（传统方式）'] += 1
                 continue
             
             entry_price = df['close'].iloc[idx+1]
@@ -141,6 +161,7 @@ def simple_backtest(df, enhanced_signals, max_hold=20, atr_mult_stop=1.0, atr_mu
             reward = abs(target - entry_price)
             
             if risk <= 0:
+                backtest_skip_reasons['风险为0'] += 1
                 continue
             
             risk_reward_ratio = reward / risk
@@ -157,6 +178,7 @@ def simple_backtest(df, enhanced_signals, max_hold=20, atr_mult_stop=1.0, atr_mu
         
         # 检查是否可以使用该信号
         if idx+1 >= len(df):
+            backtest_skip_reasons['索引超出范围'] += 1
             continue
         
         # 高频模式：允许一天多次交易，但避免重叠持仓
@@ -169,10 +191,12 @@ def simple_backtest(df, enhanced_signals, max_hold=20, atr_mult_stop=1.0, atr_mu
                     break
             
             if has_overlap:
+                backtest_skip_reasons['重叠持仓'] += 1
                 continue
         else:
             # 传统模式：完全避免重叠
             if idx in used_idxs:
+                backtest_skip_reasons['重叠持仓'] += 1
                 continue
         
         # 获取信号方向（用于计算部分止盈和交易逻辑）
