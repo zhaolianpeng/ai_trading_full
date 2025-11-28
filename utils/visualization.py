@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Optional, List, Dict
 from utils.logger import logger
 from utils.i18n import get_metric_name_cn, get_signal_type_cn, get_llm_signal_cn, format_metric_value
+from utils.file_backup import backup_file_if_exists
 
 try:
     import matplotlib.pyplot as plt

@@ -691,6 +691,10 @@ def main() -> int:
         logger.info(f"保存信号到 {signals_file}（中文关键字，北京时间）")
         from utils.json_i18n import translate_keys_to_chinese
         from utils.time_utils import convert_dict_times_to_beijing
+        from utils.file_backup import backup_file_if_exists
+        
+        # 备份旧的信号日志文件
+        backup_file_if_exists(signals_file)
         
         enhanced_cn = translate_keys_to_chinese(enhanced)
         # 转换所有时间为北京时间
