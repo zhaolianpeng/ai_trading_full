@@ -185,9 +185,9 @@ def main() -> int:
                 logger.info(f"数据时间跨度: {time_span} 天（约 {time_span/30:.1f} 个月）")
             
             else:  # synthetic
-            logger.info(f"生成合成数据 (大小={SYNTHETIC_DATA_SIZE})...")
-            df = gen_synthetic(SYNTHETIC_DATA_SIZE)
-            logger.info(f"已生成 {len(df)} 行合成数据")
+                logger.info(f"生成合成数据 (大小={SYNTHETIC_DATA_SIZE})...")
+                df = gen_synthetic(SYNTHETIC_DATA_SIZE)
+                logger.info(f"已生成 {len(df)} 行合成数据")
         
         # 2. 多时间周期综合分析（查询过往7天的行情数据，分别计算1小时、4小时、天级的K线）
         logger.info("=" * 60)
