@@ -159,30 +159,30 @@ def main() -> int:
                     raise
             
             elif DATA_SOURCE == 'binance':
-            logger.info(f"从 Binance 获取 {MARKET_SYMBOL} 的数据...")
-            # 检查是否需要获取6个月数据（用于回测）
-            backtest_months = int(os.getenv('BACKTEST_MONTHS', '0'))  # 0表示使用默认limit
-            if backtest_months > 0:
-                logger.info(f"回测模式：获取 {backtest_months} 个月的数据...")
-                from data.market_data import fetch_binance_data
-                df = fetch_binance_data(
-                    symbol=MARKET_SYMBOL,
-                    timeframe=MARKET_TIMEFRAME,
-                    months=backtest_months
-                )
-            else:
-                df = fetch_market_data(
-                    symbol=MARKET_SYMBOL,
-                    data_source='binance',
-                    timeframe=MARKET_TIMEFRAME,
-                    limit=MARKET_LIMIT
-                )
-            logger.info(f"已从 Binance 获取 {len(df)} 行数据")
-            
-            # 验证数据时间范围
-            if isinstance(df.index, pd.DatetimeIndex) and len(df) > 0:
-                time_span = (df.index[-1] - df.index[0]).days
-                logger.info(f"数据时间跨度: {time_span} 天（约 {time_span/30:.1f} 个月）")
+                logger.info(f"从 Binance 获取 {MARKET_SYMBOL} 的数据...")
+                # 检查是否需要获取6个月数据（用于回测）
+                backtest_months = int(os.getenv('BACKTEST_MONTHS', '0'))  # 0表示使用默认limit
+                if backtest_months > 0:
+                    logger.info(f"回测模式：获取 {backtest_months} 个月的数据...")
+                    from data.market_data import fetch_binance_data
+                    df = fetch_binance_data(
+                        symbol=MARKET_SYMBOL,
+                        timeframe=MARKET_TIMEFRAME,
+                        months=backtest_months
+                    )
+                else:
+                    df = fetch_market_data(
+                        symbol=MARKET_SYMBOL,
+                        data_source='binance',
+                        timeframe=MARKET_TIMEFRAME,
+                        limit=MARKET_LIMIT
+                    )
+                logger.info(f"已从 Binance 获取 {len(df)} 行数据")
+                
+                # 验证数据时间范围
+                if isinstance(df.index, pd.DatetimeIndex) and len(df) > 0:
+                    time_span = (df.index[-1] - df.index[0]).days
+                    logger.info(f"数据时间跨度: {time_span} 天（约 {time_span/30:.1f} 个月）")
             
             else:  # synthetic
                 logger.info(f"生成合成数据 (大小={SYNTHETIC_DATA_SIZE})...")
