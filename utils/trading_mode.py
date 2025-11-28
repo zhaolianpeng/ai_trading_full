@@ -29,7 +29,7 @@ def get_trading_mode_config(trading_mode='normal', data_interval='1h'):
             'min_llm_score': 30,         # 降低LLM评分要求（从40降到30）
             'min_risk_reward': 1.2,       # 降低盈亏比要求（从1.5降到1.2）
             'max_hold': 10,               # 缩短持仓周期（从20降到10）
-            'atr_stop_mult': 0.8,         # 收紧止损（从1.0降到0.8）
+            'atr_stop_mult': 1.5,         # 放宽止损（从0.8提高到1.5），避免被短期波动触发
             'atr_target_mult': 1.5,       # 降低止盈目标（从2.0降到1.5）
             'partial_tp_mult': 0.8,      # 降低部分止盈目标
             'volume_threshold': 1.1,      # 降低成交量要求
@@ -57,7 +57,7 @@ def get_trading_mode_config(trading_mode='normal', data_interval='1h'):
             'min_llm_score': 40,
             'min_risk_reward': 1.5,
             'max_hold': 20,
-            'atr_stop_mult': 1.0,
+            'atr_stop_mult': 1.5,         # 放宽止损（从1.0提高到1.5），避免被短期波动触发
             'atr_target_mult': 2.0,
             'partial_tp_mult': 1.0,
             'volume_threshold': 1.2,

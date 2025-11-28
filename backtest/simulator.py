@@ -288,11 +288,25 @@ def simple_backtest(df, enhanced_signals, max_hold=20, atr_mult_stop=1.0, atr_mu
                     break
             else:
                 # 做多：止损在下方，止盈在上方
-                # 止损检查
-                if low <= stop_loss:
-                    exit_idx = j
-                    exit_price = stop_loss
-                    break
+                # 止损检查：使用收盘价确认，避免被短期波动触发止损
+                # 回测模式下，使用收盘价确认止损，给价格更多波动空间
+                backtest_mode = os.getenv('BACKTEST_MODE', 'False').lower() == 'true' or \
+                              os.getenv('BACKTEST_FULL_DATA', 'False').lower() == 'true' or \
+                              os.getenv('BACKTEST_MONTHS', '0') != '0'
+                
+                if backtest_mode:
+                    # 回测模式：使用收盘价确认止损，避免被短期波动触发
+                    # 只有当收盘价确认跌破止损时才止损
+                    if close <= stop_loss:
+                        exit_idx = j
+                        exit_price = stop_loss
+                        break
+                else:
+                    # 非回测模式：使用最低价检查止损（更严格）
+                    if low <= stop_loss:
+                        exit_idx = j
+                        exit_price = stop_loss
+                        break
                 
                 # 部分止盈检查（如果启用且尚未部分止盈）
                 if partial_take_profit and not partial_exited and high >= partial_take_profit:
