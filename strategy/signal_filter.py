@@ -388,10 +388,15 @@ def apply_signal_filters(df, enhanced_signals,
         filter_failed_reasons = []
         
         # 1. ATR 过滤（避免低波动）
-        # 检查 ATR 相对于价格的百分比是否足够（至少 0.5%）
+        # 检查 ATR 相对于价格的百分比是否足够
+        # 回测模式下，降低ATR要求以产生更多交易
         if 'atr14' in df.columns and not pd.isna(row['atr14']):
             atr_pct = (row['atr14'] / row['close']) * 100 if row['close'] > 0 else 0
-            min_atr_pct = float(os.getenv('MIN_ATR_PCT', '0.5'))  # 默认 0.5%
+            backtest_mode = os.getenv('BACKTEST_MODE', 'False').lower() == 'true' or \
+                           os.getenv('BACKTEST_FULL_DATA', 'False').lower() == 'true' or \
+                           os.getenv('BACKTEST_MONTHS', '0') != '0'
+            default_atr_pct = 0.3 if backtest_mode else 0.5  # 回测模式降低到0.3%
+            min_atr_pct = float(os.getenv('MIN_ATR_PCT', str(default_atr_pct)))
             if atr_pct < min_atr_pct:
                 filter_failed_reasons.append(f"ATR过低({atr_pct:.2f}% < {min_atr_pct}%)")
         else:
