@@ -25,7 +25,7 @@ LLM_PROVIDER = os.getenv('LLM_PROVIDER', 'openai')  # LLM 提供商: 'openai' �
 OPENAI_MODEL = os.getenv('OPENAI_MODEL', 'gpt-4o-mini')  # OpenAI 模型（如 'gpt-4o-mini', 'gpt-4o'）
 DEEPSEEK_MODEL = os.getenv('DEEPSEEK_MODEL', 'deepseek-reasoner')  # DeepSeek 模型（如 'deepseek-chat', 'deepseek-reasoner'）
 OPENAI_TEMPERATURE = float(os.getenv('OPENAI_TEMPERATURE', '0.0'))  # LLM 温度参数
-OPENAI_MAX_TOKENS = int(os.getenv('OPENAI_MAX_TOKENS', '400'))  # LLM 最大token数
+OPENAI_MAX_TOKENS = int(os.getenv('OPENAI_MAX_TOKENS', '4000'))  # LLM 最大token数
 
 # LLM并发处理线程数：根据提供商动态调整
 # DeepSeek 没有限速，可以使用更高的并发数（默认20）
@@ -54,7 +54,7 @@ MIN_CONFIRMATIONS = int(os.getenv('MIN_CONFIRMATIONS', '2'))  # 最小确认数�
 USE_SIGNAL_FILTER = os.getenv('USE_SIGNAL_FILTER', 'True').lower() == 'true'  # 是否使用信号过滤器
 
 # ==================== 短单交易配置 ====================
-TRADING_MODE = os.getenv('TRADING_MODE', 'normal')  # 交易模式: 'normal', 'scalping', 'swing'
+TRADING_MODE = os.getenv('TRADING_MODE', 'scalping')  # 交易模式: 'normal', 'scalping', 'swing'
 # scalping: 高频短单，降低所有阈值，适合小时级及以下
 # swing: 波段交易，提高阈值，适合日线级
 # normal: 标准模式

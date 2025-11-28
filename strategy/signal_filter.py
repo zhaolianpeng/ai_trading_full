@@ -97,19 +97,36 @@ def filter_signal_quality(df, idx, signal_data, min_confirmations=2):
     reasons = []
     score = 0
     
-    # 1. 趋势确认（+20分）
+    # 获取信号方向（Long/Short）
+    llm = get_value_safe(signal_data, 'llm', {})
+    signal = get_value_safe(llm, 'signal', 'Neutral') if isinstance(llm, dict) else 'Neutral'
+    is_long = signal == 'Long'
+    is_short = signal == 'Short'
+    
+    # 1. 趋势确认（+20分）- 根据信号方向检查相应的EMA排列
     if 'ema21' in df.columns and 'ema55' in df.columns and 'ema100' in df.columns:
-        ema_bull = row['ema21'] > row['ema55'] > row['ema100']
-        if ema_bull:
+        ema_bull = row['ema21'] > row['ema55'] > row['ema100']  # 多头排列
+        ema_bear = row['ema21'] < row['ema55'] < row['ema100']  # 空头排列
+        
+        if is_long and ema_bull:
             score += 20
             reasons.append("EMA多头排列")
+        elif is_short and ema_bear:
+            score += 20
+            reasons.append("EMA空头排列")
     
-    # 2. 价格位置确认（+15分）
+    # 2. 价格位置确认（+15分）- 根据信号方向检查
     if 'ema21' in df.columns and 'ema55' in df.columns:
-        price_above_ema = row['close'] > row['ema21'] > row['ema55']
-        if price_above_ema:
-            score += 15
-            reasons.append("价格在EMA上方")
+        if is_long:
+            price_above_ema = row['close'] > row['ema21'] > row['ema55']
+            if price_above_ema:
+                score += 15
+                reasons.append("价格在EMA上方")
+        elif is_short:
+            price_below_ema = row['close'] < row['ema21'] < row['ema55']
+            if price_below_ema:
+                score += 15
+                reasons.append("价格在EMA下方")
     
     # 3. 成交量确认（+15分）
     # 根据交易模式调整成交量阈值
@@ -123,31 +140,51 @@ def filter_signal_quality(df, idx, signal_data, min_confirmations=2):
             score += 5  # 额外加分
             reasons.append(f"成交量显著放大({vol_ratio:.2f}x)")
     
-    # 4. RSI 确认（+10分）
+    # 4. RSI 确认（+10分）- 根据信号方向检查
     if 'rsi14' in df.columns and not pd.isna(row['rsi14']):
         rsi = row['rsi14']
-        if 40 < rsi < 70:  # 既不过热也不过冷
-            score += 10
-            reasons.append(f"RSI健康({rsi:.1f})")
-        elif rsi < 30:
-            score += 5  # 超卖反弹
-            reasons.append(f"RSI超卖({rsi:.1f})")
+        if is_long:
+            # 做多：RSI健康区间或超卖反弹
+            if 40 < rsi < 70:  # 既不过热也不过冷
+                score += 10
+                reasons.append(f"RSI健康({rsi:.1f})")
+            elif rsi < 30:
+                score += 5  # 超卖反弹
+                reasons.append(f"RSI超卖({rsi:.1f})")
+        elif is_short:
+            # 做空：RSI健康区间或超买回调
+            if 30 < rsi < 60:  # 既不过冷也不过热
+                score += 10
+                reasons.append(f"RSI健康({rsi:.1f})")
+            elif rsi > 70:
+                score += 5  # 超买回调
+                reasons.append(f"RSI超买({rsi:.1f})")
     
-    # 5. MACD 确认（+15分）
+    # 5. MACD 确认（+15分）- 根据信号方向检查
     if 'macd' in df.columns and 'macd_signal' in df.columns:
         if not pd.isna(row['macd']) and not pd.isna(row['macd_signal']):
             macd_bull = row['macd'] > row['macd_signal']
-            if macd_bull:
+            macd_bear = row['macd'] < row['macd_signal']
+            if is_long and macd_bull:
                 score += 15
                 reasons.append("MACD多头")
+            elif is_short and macd_bear:
+                score += 15
+                reasons.append("MACD空头")
     
-    # 6. 布林带确认（+10分）
+    # 6. 布林带确认（+10分）- 根据信号方向检查
     if 'bb_lower' in df.columns and 'bb_middle' in df.columns:
         if not pd.isna(row['bb_lower']) and not pd.isna(row['bb_middle']):
-            price_above_bb_mid = row['close'] > row['bb_middle']
-            if price_above_bb_mid:
-                score += 10
-                reasons.append("价格在布林带中轨上方")
+            if is_long:
+                price_above_bb_mid = row['close'] > row['bb_middle']
+                if price_above_bb_mid:
+                    score += 10
+                    reasons.append("价格在布林带中轨上方")
+            elif is_short:
+                price_below_bb_mid = row['close'] < row['bb_middle']
+                if price_below_bb_mid:
+                    score += 10
+                    reasons.append("价格在布林带中轨下方")
     
     # 7. ATR 波动率确认（+10分，避免高波动）
     if 'atr14' in df.columns and not pd.isna(row['atr14']):
@@ -171,12 +208,15 @@ def filter_signal_quality(df, idx, signal_data, min_confirmations=2):
             score += 10  # 超卖
             reasons.append(f"Eric Score超卖({eric_score:.2f})")
     
-    # 9. 价格动量确认（+10分）
+    # 9. 价格动量确认（+10分）- 根据信号方向检查
     if idx >= 5:
         price_momentum = (row['close'] - df['close'].iloc[idx-5]) / df['close'].iloc[idx-5]
-        if price_momentum > 0:
+        if is_long and price_momentum > 0:
             score += 10
             reasons.append(f"5周期正动量({price_momentum:.2%})")
+        elif is_short and price_momentum < 0:
+            score += 10
+            reasons.append(f"5周期负动量({price_momentum:.2%})")
     
     # 10. 支撑位确认（+15分）
     if idx >= 20:
@@ -186,25 +226,39 @@ def filter_signal_quality(df, idx, signal_data, min_confirmations=2):
             score += 15
             reasons.append(f"接近支撑位({support_distance:.2%})")
     
-    # 11. 随机指标确认（+10分，如果可用）
+    # 11. 随机指标确认（+10分，如果可用）- 根据信号方向检查
     if 'stoch_k' in df.columns and 'stoch_d' in df.columns:
         if not pd.isna(row['stoch_k']) and not pd.isna(row['stoch_d']):
             stoch_k = row['stoch_k']
             stoch_d = row['stoch_d']
-            # 随机指标金叉或处于上升趋势
-            if stoch_k > stoch_d and stoch_k < 80:  # 金叉且未超买
+            # 做多：随机指标金叉且未超买
+            if is_long and stoch_k > stoch_d and stoch_k < 80:
                 score += 10
                 reasons.append(f"随机指标金叉(K={stoch_k:.1f}, D={stoch_d:.1f})")
+            # 做空：随机指标死叉且未超卖
+            elif is_short and stoch_k < stoch_d and stoch_k > 20:
+                score += 10
+                reasons.append(f"随机指标死叉(K={stoch_k:.1f}, D={stoch_d:.1f})")
     
-    # 12. CCI确认（+10分，如果可用）
+    # 12. CCI确认（+10分，如果可用）- 根据信号方向检查
     if 'cci' in df.columns and not pd.isna(row.get('cci', np.nan)):
         cci = row['cci']
-        if 0 < cci < 100:  # CCI在健康区间
-            score += 10
-            reasons.append(f"CCI健康({cci:.1f})")
-        elif cci < -100:
-            score += 5  # 超卖
-            reasons.append(f"CCI超卖({cci:.1f})")
+        if is_long:
+            # 做多：CCI在健康区间或超卖
+            if 0 < cci < 100:  # CCI在健康区间
+                score += 10
+                reasons.append(f"CCI健康({cci:.1f})")
+            elif cci < -100:
+                score += 5  # 超卖
+                reasons.append(f"CCI超卖({cci:.1f})")
+        elif is_short:
+            # 做空：CCI在健康区间或超买
+            if -100 < cci < 0:  # CCI在健康区间
+                score += 10
+                reasons.append(f"CCI健康({cci:.1f})")
+            elif cci > 100:
+                score += 5  # 超买
+                reasons.append(f"CCI超买({cci:.1f})")
     
     # 13. ADX确认（+15分，如果可用）
     if 'adx' in df.columns and not pd.isna(row.get('adx', np.nan)):
@@ -216,12 +270,15 @@ def filter_signal_quality(df, idx, signal_data, min_confirmations=2):
             score += 10
             reasons.append(f"ADX中等趋势({adx:.1f})")
     
-    # 14. Donchian通道确认（+10分，如果可用）
+    # 14. Donchian通道确认（+10分，如果可用）- 根据信号方向检查
     if 'donchian_trend' in df.columns and not pd.isna(row.get('donchian_trend', np.nan)):
         donchian_trend = str(row['donchian_trend']).upper()
-        if donchian_trend == 'UP':
+        if is_long and donchian_trend == 'UP':
             score += 10
             reasons.append("Donchian通道上升趋势")
+        elif is_short and donchian_trend == 'DOWN':
+            score += 10
+            reasons.append("Donchian通道下降趋势")
     
     # 15. EMA眼确认（+10分，如果可用）
     if 'ema_eye' in df.columns and not pd.isna(row.get('ema_eye', np.nan)):
@@ -473,12 +530,24 @@ def apply_signal_filters(df, enhanced_signals,
         else:
             filter_failed_reasons.append("成交量数据缺失（强制要求）")
         
-        # 2. EMA 多头排列过滤（强制要求，回测模式和非回测模式都要求）
+        # 2. EMA排列过滤（强制要求，根据信号方向检查）
+        # 做多信号：要求EMA多头排列（ema21 > ema55 > ema100）
+        # 做空信号：要求EMA空头排列（ema21 < ema55 < ema100）
         if 'ema21' in df.columns and 'ema55' in df.columns and 'ema100' in df.columns:
-            ema_bull = row['ema21'] > row['ema55'] > row['ema100']
-            # 强制要求EMA多头排列（回测模式和非回测模式都要求）
-            if not ema_bull:
-                filter_failed_reasons.append("EMA未形成多头排列（强制要求）")
+            ema_bull = row['ema21'] > row['ema55'] > row['ema100']  # 多头排列
+            ema_bear = row['ema21'] < row['ema55'] < row['ema100']  # 空头排列
+            
+            if signal == 'Long':
+                # 做多信号：强制要求EMA多头排列
+                if not ema_bull:
+                    filter_failed_reasons.append("EMA未形成多头排列（做多强制要求）")
+            elif signal == 'Short':
+                # 做空信号：强制要求EMA空头排列
+                if not ema_bear:
+                    filter_failed_reasons.append("EMA未形成空头排列（做空强制要求）")
+            else:
+                # 中性信号或其他：不允许
+                filter_failed_reasons.append(f"信号方向不明确（signal={signal}，只接受Long/Short）")
         else:
             filter_failed_reasons.append("EMA数据缺失（强制要求）")
         
