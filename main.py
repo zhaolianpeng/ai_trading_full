@@ -121,13 +121,13 @@ def main() -> int:
         if not use_cache:
             # 从数据源获取数据
             if DATA_SOURCE == 'csv':
-            if not DATA_PATH or not Path(DATA_PATH).exists():
-                raise FileNotFoundError(f"DATA_SOURCE is 'csv' but DATA_PATH does not exist: {DATA_PATH}")
-            logger.info(f"从 CSV 文件加载数据: {DATA_PATH}...")
-            df = load_csv(DATA_PATH)
-            logger.info(f"已加载 {len(df)} 行数据从 {DATA_PATH}")
+                if not DATA_PATH or not Path(DATA_PATH).exists():
+                    raise FileNotFoundError(f"DATA_SOURCE is 'csv' but DATA_PATH does not exist: {DATA_PATH}")
+                logger.info(f"从 CSV 文件加载数据: {DATA_PATH}...")
+                df = load_csv(DATA_PATH)
+                logger.info(f"已加载 {len(df)} 行数据从 {DATA_PATH}")
             
-        elif DATA_SOURCE == 'yahoo':
+            elif DATA_SOURCE == 'yahoo':
             logger.info(f"从 Yahoo Finance 获取 {MARKET_SYMBOL} 的数据...")
             try:
                 df = fetch_market_data(
@@ -158,7 +158,7 @@ def main() -> int:
                     logger.error("=" * 60)
                 raise
             
-        elif DATA_SOURCE == 'binance':
+            elif DATA_SOURCE == 'binance':
             logger.info(f"从 Binance 获取 {MARKET_SYMBOL} 的数据...")
             # 检查是否需要获取6个月数据（用于回测）
             backtest_months = int(os.getenv('BACKTEST_MONTHS', '0'))  # 0表示使用默认limit
@@ -184,7 +184,7 @@ def main() -> int:
                 time_span = (df.index[-1] - df.index[0]).days
                 logger.info(f"数据时间跨度: {time_span} 天（约 {time_span/30:.1f} 个月）")
             
-        else:  # synthetic
+            else:  # synthetic
             logger.info(f"生成合成数据 (大小={SYNTHETIC_DATA_SIZE})...")
             df = gen_synthetic(SYNTHETIC_DATA_SIZE)
             logger.info(f"已生成 {len(df)} 行合成数据")
