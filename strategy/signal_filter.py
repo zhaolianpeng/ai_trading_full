@@ -264,8 +264,14 @@ def filter_signal_quality(df, idx, signal_data, min_confirmations=2):
             pass
     
     # 判断是否有效（至少需要 min_confirmations 个确认）
+    # 回测模式下，降低质量评分要求以产生更多交易
     confirmations = len(reasons)
-    is_valid = confirmations >= min_confirmations and score >= 50
+    import os
+    backtest_mode = os.getenv('BACKTEST_MODE', 'False').lower() == 'true' or \
+                   os.getenv('BACKTEST_FULL_DATA', 'False').lower() == 'true' or \
+                   os.getenv('BACKTEST_MONTHS', '0') != '0'
+    min_score_threshold = 30 if backtest_mode else 50  # 回测模式降低到30
+    is_valid = confirmations >= min_confirmations and score >= min_score_threshold
     
     return is_valid, score, reasons
 
