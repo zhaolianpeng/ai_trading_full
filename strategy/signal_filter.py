@@ -379,7 +379,7 @@ def apply_signal_filters(df, enhanced_signals,
         backtest_mode = os.getenv('BACKTEST_MODE', 'False').lower() == 'true' or \
                        os.getenv('BACKTEST_FULL_DATA', 'False').lower() == 'true' or \
                        os.getenv('BACKTEST_MONTHS', '0') != '0'
-        effective_threshold = 25 if backtest_mode else structure_confidence_threshold  # 回测模式提高到25（从10），提升胜率
+        effective_threshold = 30 if backtest_mode else structure_confidence_threshold  # 回测模式提高到30（从25），进一步提升胜率
         if llm_score < effective_threshold:
             skipped_count += 1
             skip_reasons_count['LLM评分不足（结构置信度）'] += 1
