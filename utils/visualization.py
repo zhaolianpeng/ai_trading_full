@@ -325,9 +325,12 @@ def generate_report(df: pd.DataFrame, signals: List[Dict],
     report_text = "\n".join(report)
     
     if output_path:
-        with open(output_path, 'w', encoding='utf-8') as f:
+        report_path = Path(output_path)
+        # 备份旧的分析报告文件
+        backup_file_if_exists(report_path)
+        with open(report_path, 'w', encoding='utf-8') as f:
             f.write(report_text)
-        logger.info(f"Saved report to {output_path}")
+        logger.info(f"Saved report to {report_path}")
     else:
         # 使用 OUTPUT_DIR 配置
         from config import OUTPUT_DIR
@@ -335,6 +338,8 @@ def generate_report(df: pd.DataFrame, signals: List[Dict],
         output_dir = Path(OUTPUT_DIR)
         output_dir.mkdir(parents=True, exist_ok=True)
         report_path = output_dir / 'analysis_report.txt'
+        # 备份旧的分析报告文件
+        backup_file_if_exists(report_path)
         with open(report_path, 'w', encoding='utf-8') as f:
             f.write(report_text)
         logger.info(f"Saved report to {report_path}")
