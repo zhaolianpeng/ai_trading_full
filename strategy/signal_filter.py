@@ -402,23 +402,31 @@ def apply_signal_filters(df, enhanced_signals,
         else:
             filter_failed_reasons.append("ATR数据缺失")
         
-        # 2. EMA 多头排列过滤（强制要求）
+        # 2. EMA 多头排列过滤（回测模式下放宽要求）
         if 'ema21' in df.columns and 'ema55' in df.columns and 'ema100' in df.columns:
             ema_bull = row['ema21'] > row['ema55'] > row['ema100']
-            if not ema_bull:
-                filter_failed_reasons.append("EMA未形成多头排列")
+            # 回测模式下，允许部分EMA排列（至少ema21 > ema55）
+            if backtest_mode:
+                ema_partial_bull = row['ema21'] > row['ema55']
+                if not ema_partial_bull:
+                    filter_failed_reasons.append("EMA未形成基本多头排列(ema21 > ema55)")
+            else:
+                if not ema_bull:
+                    filter_failed_reasons.append("EMA未形成多头排列")
         else:
             filter_failed_reasons.append("EMA数据缺失")
         
-        # 3. 趋势强度 > 50
+        # 3. 趋势强度（回测模式下降低要求）
         try:
             # 使用最近50根K线计算趋势强度
             trend_strength = calculate_trend_strength(df.iloc[max(0, idx-49):idx+1], n=min(50, idx+1))
-            if trend_strength <= 50:
-                filter_failed_reasons.append(f"趋势强度不足({trend_strength:.1f} <= 50)")
+            min_trend_strength = 30 if backtest_mode else 50  # 回测模式降低到30
+            if trend_strength <= min_trend_strength:
+                filter_failed_reasons.append(f"趋势强度不足({trend_strength:.1f} <= {min_trend_strength})")
         except Exception as e:
             logger.warning(f"计算趋势强度失败: {e}")
-            filter_failed_reasons.append("趋势强度计算失败")
+            if not backtest_mode:  # 回测模式下，计算失败不阻止交易
+                filter_failed_reasons.append("趋势强度计算失败")
         
         # 4. 突破有效性 = VALID
         # 检查是否有突破信号，如果有，验证其有效性
