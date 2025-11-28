@@ -589,8 +589,11 @@ def main() -> int:
                 logger.warning(f"  MIN_LLM_SCORE={max(20, min_llm-10)}")
                 logger.warning(f"  MIN_RISK_REWARD={max(1.0, min_rr-0.1):.1f}")
         
-        # 3. 为确认的信号查找3分钟周期最佳入场点
-        logger.info("为确认的信号查找3分钟周期最佳入场点...")
+        # 3. 大趋势信号确认后，在小周期查找具体开单时间
+        # 流程：小时级数据找到大趋势信号 -> 重新查询信号时间范围内的5分钟级数据 -> 找具体开单时间
+        logger.info("=" * 60)
+        logger.info("📈 大趋势信号已确认（小时级），开始在小周期查找具体开单时间...")
+        logger.info("=" * 60)
         from utils.entry_finder import find_best_entry_point_3m
         from datetime import datetime
         
@@ -628,7 +631,9 @@ def main() -> int:
             if signal_price is None:
                 continue
             
-            # 查找最佳入场点
+            # 大趋势信号确认后，重新查询5分钟级数据，找具体开单时间
+            # 查询范围：信号时间前后8小时内
+            logger.info(f"🔍 信号 {signal_idx}: 重新查询5分钟级数据，查找开单时间（信号时间: {signal_time}）")
             entry_point = find_best_entry_point_3m(
                 signal_time=signal_time,
                 signal_price=signal_price,

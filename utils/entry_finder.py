@@ -47,11 +47,12 @@ def find_best_entry_point_3m(
         start_time = signal_time - timedelta(hours=max_time_window_hours)
         end_time = signal_time + timedelta(hours=max_time_window_hours)
         
-        logger.info(f"查找短周期入场点: 信号时间={signal_time}, 方向={signal_direction}, "
-                   f"时间窗口=±{max_time_window_hours}小时（{start_time} 到 {end_time}）")
+        logger.info(f"📊 大趋势信号已确认（小时级）: 信号时间={signal_time}, 方向={signal_direction}")
+        logger.info(f"🔍 重新查询5分钟级数据，查找具体开单时间: 时间窗口=±{max_time_window_hours}小时（{start_time} 到 {end_time}）")
         
         # 根据数据源获取短周期数据（优先使用5分钟，因为更通用）
         # 注意：虽然函数名叫3m，但实际使用5m数据，因为Binance的3m在某些市场可能不稳定
+        # 这是在大趋势信号确认后，重新查询5分钟级数据来找具体开单时间
         if DATA_SOURCE == 'binance':
             from data.market_data import fetch_binance_data
             # 优先尝试5m，如果失败则尝试3m
