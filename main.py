@@ -593,7 +593,7 @@ def main() -> int:
                 min_rr = float(os.getenv('MIN_RISK_REWARD', '1.5'))  # 保持1.5（用户要求）
                 min_llm = int(os.getenv('MIN_LLM_SCORE', '40'))  # 降低到40（从45），增加交易数量
                 logger.info(f"回测模式过滤阈值: 质量评分>={min_quality}, 确认数>={min_conf}, 盈亏比>={min_rr}, LLM评分>={min_llm}")
-                logger.info("注意：只接受做多（Long）信号，使用收盘价确认止损，避免被短期波动触发")
+                logger.info("注意：接受做多（Long）和做空（Short）信号，使用收盘价确认止损，避免被短期波动触发")
             else:
                 # 使用交易模式配置的参数，但允许环境变量覆盖
                 min_quality = int(os.getenv('MIN_QUALITY_SCORE', mode_config['min_quality_score']))

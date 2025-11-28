@@ -66,7 +66,7 @@ HF_MIN_CONSECUTIVE_OVERSOLD = int(os.getenv('HF_MIN_CONSECUTIVE_OVERSOLD', '3'))
 ALLOW_MULTIPLE_TRADES_PER_DAY = os.getenv('ALLOW_MULTIPLE_TRADES_PER_DAY', 'True').lower() == 'true'  # 是否允许一天多次交易
 
 # ==================== 合约交易配置 ====================
-FUTURES_LEVERAGE = int(os.getenv('FUTURES_LEVERAGE', '3'))  # 杠杆倍数（默认3倍，建议1-10倍）
+FUTURES_LEVERAGE = int(os.getenv('FUTURES_LEVERAGE', '10'))  # 杠杆倍数（默认10倍，支持10-30倍）
 FUTURES_RISK_PER_TRADE = float(os.getenv('FUTURES_RISK_PER_TRADE', '0.02'))  # 每笔交易风险比例（默认2%）
 FUTURES_MARGIN_RATE = float(os.getenv('FUTURES_MARGIN_RATE', '0.01'))  # 保证金率（默认1%，即100倍杠杆需要1%保证金）
 FUTURES_MAINTENANCE_MARGIN_RATE = float(os.getenv('FUTURES_MAINTENANCE_MARGIN_RATE', '0.5'))  # 维持保证金率（默认50%）

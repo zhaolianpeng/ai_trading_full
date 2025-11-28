@@ -297,19 +297,20 @@ def apply_signal_filters(df, enhanced_signals,
     Returns:
         过滤后的信号列表（包含质量评分和盈亏比信息）
     """
-    if allowed_structure_labels is None:
-        # 默认只允许做多信号的结构标签（参考 ai_quant_strategy.py）
-        # 回测模式下，放宽结构标签限制，允许更多信号通过
+        if allowed_structure_labels is None:
+        # 默认允许做多和做空信号的结构标签
+        # 支持双向交易：做多（Long）和做空（Short）
         backtest_mode = os.getenv('BACKTEST_MODE', 'False').lower() == 'true' or \
                        os.getenv('BACKTEST_FULL_DATA', 'False').lower() == 'true' or \
                        os.getenv('BACKTEST_MONTHS', '0') != '0'
         if backtest_mode:
             # 回测模式：允许所有结构标签（包括None），以增加交易信号
             allowed_structure_labels = ["TREND_UP", "BREAKOUT_UP", "REVERSAL_UP", "TREND_DOWN", "BREAKOUT_DOWN", "REVERSAL_DOWN", "RANGE", "HIGH_FREQ"]
-            logger.info("回测模式：放宽结构标签限制，允许更多信号通过")
+            logger.info("回测模式：允许所有结构标签，支持做多和做空信号")
         else:
-            # 非回测模式：只允许做多信号的结构标签
-            allowed_structure_labels = ["TREND_UP", "BREAKOUT_UP", "REVERSAL_UP"]
+            # 非回测模式：允许做多和做空信号的结构标签
+            allowed_structure_labels = ["TREND_UP", "BREAKOUT_UP", "REVERSAL_UP", "TREND_DOWN", "BREAKOUT_DOWN", "REVERSAL_DOWN", "HIGH_FREQ"]
+            logger.info("允许做多和做空信号的结构标签")
     
     logger.info(f"应用信号过滤器（最小质量评分={min_quality_score}, 最小盈亏比={min_risk_reward}, 允许的结构标签={allowed_structure_labels}）...")
     
