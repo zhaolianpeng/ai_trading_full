@@ -40,7 +40,7 @@ from config import (
     BACKTEST_MAX_HOLD, BACKTEST_ATR_STOP_MULT, BACKTEST_ATR_TARGET_MULT, MIN_LLM_SCORE,
     USE_ADVANCED_TA, USE_ERIC_INDICATORS, MIN_RISK_REWARD, MIN_QUALITY_SCORE,
     MIN_CONFIRMATIONS, USE_SIGNAL_FILTER, BACKTEST_PARTIAL_TP_RATIO, BACKTEST_PARTIAL_TP_MULT,
-    TRADING_MODE, SIGNAL_LOOKBACK_DAYS, MARKET_TYPE
+    TRADING_MODE, SIGNAL_LOOKBACK_DAYS, MARKET_TYPE, USE_CACHED_DATA
 )
 
 # 工具层导入
@@ -94,7 +94,33 @@ def main() -> int:
         # 1. 加载数据
         logger.info(f"数据源: {DATA_SOURCE}")
         
-        if DATA_SOURCE == 'csv':
+        # 检查是否存在缓存数据
+        output_dir = Path(OUTPUT_DIR)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        cached_data_file = output_dir / 'sample_data.csv'
+        use_cache = USE_CACHED_DATA and cached_data_file.exists()
+        
+        if use_cache:
+            logger.info(f"发现缓存数据文件: {cached_data_file}")
+            logger.info("尝试从缓存加载数据...")
+            try:
+                df = load_csv(str(cached_data_file))
+                logger.info(f"✅ 成功从缓存加载 {len(df)} 行数据")
+                logger.info(f"数据时间范围: {df.index[0]} 到 {df.index[-1]}")
+                # 验证数据完整性
+                required_columns = ['open', 'high', 'low', 'close', 'volume']
+                if all(col in df.columns for col in required_columns):
+                    logger.info("缓存数据验证通过，使用缓存数据进行回放")
+                else:
+                    logger.warning(f"缓存数据缺少必要列，将重新获取数据")
+                    use_cache = False
+            except Exception as e:
+                logger.warning(f"加载缓存数据失败: {e}，将重新获取数据")
+                use_cache = False
+        
+        if not use_cache:
+            # 从数据源获取数据
+            if DATA_SOURCE == 'csv':
             if not DATA_PATH or not Path(DATA_PATH).exists():
                 raise FileNotFoundError(f"DATA_SOURCE is 'csv' but DATA_PATH does not exist: {DATA_PATH}")
             logger.info(f"从 CSV 文件加载数据: {DATA_PATH}...")
@@ -803,13 +829,16 @@ def main() -> int:
         
         # 6. 保存文件
         trades_file = output_dir / 'trades.csv'
-        data_file = output_dir / 'sample_data.csv'
         
         logger.info(f"保存交易记录到 {trades_file}")
         trades_df.to_csv(trades_file, index=False)
         
-        logger.info(f"保存数据到 {data_file}")
-        df.to_csv(data_file)
+        # 注意：sample_data.csv 已在数据获取时保存到缓存文件
+        # 这里不再重复保存，因为原始K线数据已经在获取时保存
+        # 如果需要在处理后的数据（包含技术指标）也保存，可以取消下面的注释
+        # data_file = output_dir / 'sample_data.csv'
+        # logger.info(f"保存处理后的数据到 {data_file}")
+        # df.to_csv(data_file)
         
         # 7. 生成可视化图表和报告
         try:

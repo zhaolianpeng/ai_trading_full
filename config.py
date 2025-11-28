@@ -83,3 +83,4 @@ LOG_FILE = os.getenv('LOG_FILE', 'running/trading.log')  # 日志文件路径，
 # ==================== 输出配置 ====================
 # 默认输出目录：running（所有执行结果文件统一放在此目录）
 OUTPUT_DIR = os.getenv('OUTPUT_DIR', 'running')  # 输出文件目录
+USE_CACHED_DATA = os.getenv('USE_CACHED_DATA', 'True').lower() == 'true'  # 是否使用缓存数据（如果存在 sample_data.csv）
