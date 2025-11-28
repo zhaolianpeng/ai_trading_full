@@ -264,13 +264,13 @@ def filter_signal_quality(df, idx, signal_data, min_confirmations=2):
             pass
     
     # 判断是否有效（至少需要 min_confirmations 个确认）
-    # 回测模式下，降低质量评分要求以产生更多交易
+    # 回测模式下，大幅降低质量评分要求以产生更多交易
     confirmations = len(reasons)
     import os
     backtest_mode = os.getenv('BACKTEST_MODE', 'False').lower() == 'true' or \
                    os.getenv('BACKTEST_FULL_DATA', 'False').lower() == 'true' or \
                    os.getenv('BACKTEST_MONTHS', '0') != '0'
-    min_score_threshold = 30 if backtest_mode else 50  # 回测模式降低到30
+    min_score_threshold = 15 if backtest_mode else 50  # 回测模式降低到15（从30）
     is_valid = confirmations >= min_confirmations and score >= min_score_threshold
     
     return is_valid, score, reasons
@@ -395,37 +395,38 @@ def apply_signal_filters(df, enhanced_signals,
             backtest_mode = os.getenv('BACKTEST_MODE', 'False').lower() == 'true' or \
                            os.getenv('BACKTEST_FULL_DATA', 'False').lower() == 'true' or \
                            os.getenv('BACKTEST_MONTHS', '0') != '0'
-            default_atr_pct = 0.3 if backtest_mode else 0.5  # 回测模式降低到0.3%
+            default_atr_pct = 0.15 if backtest_mode else 0.5  # 回测模式降低到0.15%（从0.3%）
             min_atr_pct = float(os.getenv('MIN_ATR_PCT', str(default_atr_pct)))
             if atr_pct < min_atr_pct:
                 filter_failed_reasons.append(f"ATR过低({atr_pct:.2f}% < {min_atr_pct}%)")
         else:
             filter_failed_reasons.append("ATR数据缺失")
         
-        # 2. EMA 多头排列过滤（回测模式下放宽要求）
+        # 2. EMA 多头排列过滤（回测模式下大幅放宽或取消要求）
         if 'ema21' in df.columns and 'ema55' in df.columns and 'ema100' in df.columns:
             ema_bull = row['ema21'] > row['ema55'] > row['ema100']
-            # 回测模式下，允许部分EMA排列（至少ema21 > ema55）
-            if backtest_mode:
-                ema_partial_bull = row['ema21'] > row['ema55']
-                if not ema_partial_bull:
-                    filter_failed_reasons.append("EMA未形成基本多头排列(ema21 > ema55)")
-            else:
+            # 回测模式下，完全取消EMA排列要求（允许所有信号通过）
+            if not backtest_mode:
                 if not ema_bull:
                     filter_failed_reasons.append("EMA未形成多头排列")
         else:
-            filter_failed_reasons.append("EMA数据缺失")
+            # 回测模式下，EMA数据缺失不阻止交易
+            if not backtest_mode:
+                filter_failed_reasons.append("EMA数据缺失")
         
-        # 3. 趋势强度（回测模式下降低要求）
+        # 3. 趋势强度（回测模式下大幅降低或取消要求）
         try:
             # 使用最近50根K线计算趋势强度
             trend_strength = calculate_trend_strength(df.iloc[max(0, idx-49):idx+1], n=min(50, idx+1))
-            min_trend_strength = 30 if backtest_mode else 50  # 回测模式降低到30
-            if trend_strength <= min_trend_strength:
-                filter_failed_reasons.append(f"趋势强度不足({trend_strength:.1f} <= {min_trend_strength})")
+            # 回测模式下，完全取消趋势强度要求（允许所有信号通过）
+            if not backtest_mode:
+                min_trend_strength = 50
+                if trend_strength <= min_trend_strength:
+                    filter_failed_reasons.append(f"趋势强度不足({trend_strength:.1f} <= {min_trend_strength})")
         except Exception as e:
             logger.warning(f"计算趋势强度失败: {e}")
-            if not backtest_mode:  # 回测模式下，计算失败不阻止交易
+            # 回测模式下，计算失败不阻止交易
+            if not backtest_mode:
                 filter_failed_reasons.append("趋势强度计算失败")
         
         # 4. 突破有效性 = VALID

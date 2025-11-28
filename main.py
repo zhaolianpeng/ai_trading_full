@@ -560,10 +560,10 @@ def main() -> int:
             if backtest_mode:
                 logger.info("回测模式：大幅降低过滤阈值以产生更多交易信号（目标：200+交易）")
                 # 使用非常宽松的阈值，以产生更多交易
-                min_quality = int(os.getenv('MIN_QUALITY_SCORE', '20'))  # 降低到20（从30）
+                min_quality = int(os.getenv('MIN_QUALITY_SCORE', '10'))  # 降低到10（从20）
                 min_conf = int(os.getenv('MIN_CONFIRMATIONS', '1'))  # 保持1
                 min_rr = float(os.getenv('MIN_RISK_REWARD', '1.5'))  # 保持1.5（用户要求）
-                min_llm = int(os.getenv('MIN_LLM_SCORE', '20'))  # 降低到20（从30）
+                min_llm = int(os.getenv('MIN_LLM_SCORE', '10'))  # 降低到10（从20）
                 logger.info(f"回测模式过滤阈值: 质量评分>={min_quality}, 确认数>={min_conf}, 盈亏比>={min_rr}, LLM评分>={min_llm}")
             else:
                 # 使用交易模式配置的参数，但允许环境变量覆盖
