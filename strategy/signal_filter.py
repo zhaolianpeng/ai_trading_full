@@ -270,7 +270,7 @@ def filter_signal_quality(df, idx, signal_data, min_confirmations=2):
     backtest_mode = os.getenv('BACKTEST_MODE', 'False').lower() == 'true' or \
                    os.getenv('BACKTEST_FULL_DATA', 'False').lower() == 'true' or \
                    os.getenv('BACKTEST_MONTHS', '0') != '0'
-    min_score_threshold = 25 if backtest_mode else 50  # 回测模式提高到25（从15），提升胜率
+    min_score_threshold = 30 if backtest_mode else 50  # 回测模式提高到30（从25），进一步提升胜率
     is_valid = confirmations >= min_confirmations and score >= min_score_threshold
     
     return is_valid, score, reasons
@@ -391,17 +391,32 @@ def apply_signal_filters(df, enhanced_signals,
         is_high_freq = get_value_safe(item, 'hf_signal', None) is not None or \
                       get_value_safe(item, 'structure_label', '') == 'HIGH_FREQ'
         
-        if signal not in ['Long', 'Short']:
-            # 如果未使用 LLM，fallback 可能返回 'Neutral'，这种情况下如果评分足够高，也允许通过
-            if signal == 'Neutral' and llm_score >= min_llm_score:
-                # Neutral 但评分足够，可以继续
-                pass
-            elif not is_high_freq:  # 高频交易信号允许通过
+        # 回测模式下，只接受做多（Long）信号，拒绝做空和中性信号以提升胜率
+        backtest_mode = os.getenv('BACKTEST_MODE', 'False').lower() == 'true' or \
+                       os.getenv('BACKTEST_FULL_DATA', 'False').lower() == 'true' or \
+                       os.getenv('BACKTEST_MONTHS', '0') != '0'
+        
+        if backtest_mode:
+            # 回测模式：只接受做多信号
+            if signal != 'Long':
                 skipped_count += 1
                 skip_reasons_count['LLM信号不是Long/Short'] += 1
-                logger.debug(f"信号 {idx} 被过滤: LLM信号={signal}（不是Long/Short），且不是高频交易信号")
+                logger.debug(f"信号 {idx} 被过滤: LLM信号={signal}（回测模式只接受Long信号）")
                 continue
-        elif llm_score < min_llm_score and not is_high_freq:  # 高频交易信号降低LLM评分要求
+        else:
+            # 非回测模式：支持Long和Short
+            if signal not in ['Long', 'Short']:
+                # 如果未使用 LLM，fallback 可能返回 'Neutral'，这种情况下如果评分足够高，也允许通过
+                if signal == 'Neutral' and llm_score >= min_llm_score:
+                    # Neutral 但评分足够，可以继续
+                    pass
+                elif not is_high_freq:  # 高频交易信号允许通过
+                    skipped_count += 1
+                    skip_reasons_count['LLM信号不是Long/Short'] += 1
+                    logger.debug(f"信号 {idx} 被过滤: LLM信号={signal}（不是Long/Short），且不是高频交易信号")
+                    continue
+        
+        if llm_score < min_llm_score and not is_high_freq:  # 高频交易信号降低LLM评分要求
             skipped_count += 1
             skip_reasons_count['LLM评分不足'] += 1
             logger.debug(f"信号 {idx} 被过滤: LLM评分={llm_score} < {min_llm_score}")
