@@ -128,35 +128,35 @@ def main() -> int:
                 logger.info(f"已加载 {len(df)} 行数据从 {DATA_PATH}")
             
             elif DATA_SOURCE == 'yahoo':
-            logger.info(f"从 Yahoo Finance 获取 {MARKET_SYMBOL} 的数据...")
-            try:
-                df = fetch_market_data(
-                    symbol=MARKET_SYMBOL,
-                    data_source='yahoo',
-                    period=MARKET_PERIOD,
-                    interval=MARKET_INTERVAL
-                )
-                logger.info(f"已从 Yahoo Finance 获取 {len(df)} 行数据")
-            except (ValueError, Exception) as e:
-                error_msg = str(e)
-                logger.error(f"从 Yahoo Finance 获取数据失败: {error_msg}")
-                # 如果是加密货币，提供自动降级到 Binance 的建议
-                is_crypto = any(x in MARKET_SYMBOL.upper() for x in ['BTC', 'ETH', 'USD', 'USDT'])
-                if is_crypto:
-                    logger.error("=" * 60)
-                    logger.error("Yahoo Finance 对加密货币支持不稳定！")
-                    logger.error("=" * 60)
-                    logger.info("推荐使用 Binance 获取加密货币数据：")
-                    binance_symbol = MARKET_SYMBOL.replace('-USD', '/USDT').replace('-', '/')
-                    logger.info(f"  DATA_SOURCE=binance MARKET_SYMBOL={binance_symbol} MARKET_TIMEFRAME=1h")
-                    logger.info("")
-                    logger.info("或者使用股票数据测试：")
-                    logger.info(f"  DATA_SOURCE=yahoo MARKET_SYMBOL=AAPL MARKET_PERIOD=3mo MARKET_INTERVAL=1d")
-                    logger.info("")
-                    logger.info("或者使用合成数据：")
-                    logger.info(f"  DATA_SOURCE=synthetic")
-                    logger.error("=" * 60)
-                raise
+                logger.info(f"从 Yahoo Finance 获取 {MARKET_SYMBOL} 的数据...")
+                try:
+                    df = fetch_market_data(
+                        symbol=MARKET_SYMBOL,
+                        data_source='yahoo',
+                        period=MARKET_PERIOD,
+                        interval=MARKET_INTERVAL
+                    )
+                    logger.info(f"已从 Yahoo Finance 获取 {len(df)} 行数据")
+                except (ValueError, Exception) as e:
+                    error_msg = str(e)
+                    logger.error(f"从 Yahoo Finance 获取数据失败: {error_msg}")
+                    # 如果是加密货币，提供自动降级到 Binance 的建议
+                    is_crypto = any(x in MARKET_SYMBOL.upper() for x in ['BTC', 'ETH', 'USD', 'USDT'])
+                    if is_crypto:
+                        logger.error("=" * 60)
+                        logger.error("Yahoo Finance 对加密货币支持不稳定！")
+                        logger.error("=" * 60)
+                        logger.info("推荐使用 Binance 获取加密货币数据：")
+                        binance_symbol = MARKET_SYMBOL.replace('-USD', '/USDT').replace('-', '/')
+                        logger.info(f"  DATA_SOURCE=binance MARKET_SYMBOL={binance_symbol} MARKET_TIMEFRAME=1h")
+                        logger.info("")
+                        logger.info("或者使用股票数据测试：")
+                        logger.info(f"  DATA_SOURCE=yahoo MARKET_SYMBOL=AAPL MARKET_PERIOD=3mo MARKET_INTERVAL=1d")
+                        logger.info("")
+                        logger.info("或者使用合成数据：")
+                        logger.info(f"  DATA_SOURCE=synthetic")
+                        logger.error("=" * 60)
+                    raise
             
             elif DATA_SOURCE == 'binance':
             logger.info(f"从 Binance 获取 {MARKET_SYMBOL} 的数据...")
