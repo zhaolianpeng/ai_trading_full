@@ -308,6 +308,18 @@ def apply_signal_filters(df, enhanced_signals,
     filtered_signals = []
     skipped_count = 0
     
+    # 统计各过滤器的过滤数量
+    skip_reasons_count = {
+        '索引超出范围': 0,
+        '结构标签不符合': 0,
+        'LLM评分不足（结构置信度）': 0,
+        'LLM信号不是Long/Short': 0,
+        'LLM评分不足': 0,
+        '质量评分不足': 0,
+        '盈亏比不足': 0,
+        '强制过滤器失败': 0
+    }
+    
     for item in enhanced_signals:
         s = get_value_safe(item, 'rule', {})
         idx = get_value_safe(s, 'idx', 0)
@@ -315,6 +327,7 @@ def apply_signal_filters(df, enhanced_signals,
         # 基本检查
         if idx >= len(df) or idx + 1 >= len(df):
             skipped_count += 1
+            skip_reasons_count['索引超出范围'] += 1
             continue
         
         # 结构标签检查（参考 ai_quant_strategy.py：只在特定结构下生成信号）
@@ -326,6 +339,8 @@ def apply_signal_filters(df, enhanced_signals,
         
         if structure_label not in allowed_structure_labels:
             skipped_count += 1
+            skip_reasons_count['结构标签不符合'] += 1
+            logger.debug(f"信号 {idx} 被过滤: 结构标签={structure_label}, 允许的标签={allowed_structure_labels}")
             continue
         
         # LLM 信号检查
@@ -345,6 +360,8 @@ def apply_signal_filters(df, enhanced_signals,
         effective_threshold = 10 if backtest_mode else structure_confidence_threshold  # 回测模式降低到10
         if llm_score < effective_threshold:
             skipped_count += 1
+            skip_reasons_count['LLM评分不足（结构置信度）'] += 1
+            logger.debug(f"信号 {idx} 被过滤: LLM评分={llm_score} < {effective_threshold}（结构置信度阈值）")
             continue
         
         # LLM 信号检查（支持Long和Short，高频交易可能产生Short信号）
@@ -359,9 +376,13 @@ def apply_signal_filters(df, enhanced_signals,
                 pass
             elif not is_high_freq:  # 高频交易信号允许通过
                 skipped_count += 1
+                skip_reasons_count['LLM信号不是Long/Short'] += 1
+                logger.debug(f"信号 {idx} 被过滤: LLM信号={signal}（不是Long/Short），且不是高频交易信号")
                 continue
         elif llm_score < min_llm_score and not is_high_freq:  # 高频交易信号降低LLM评分要求
             skipped_count += 1
+            skip_reasons_count['LLM评分不足'] += 1
+            logger.debug(f"信号 {idx} 被过滤: LLM评分={llm_score} < {min_llm_score}")
             continue
         
         # 质量评分检查
@@ -369,6 +390,8 @@ def apply_signal_filters(df, enhanced_signals,
         
         if not is_valid or quality_score < min_quality_score:
             skipped_count += 1
+            skip_reasons_count['质量评分不足'] += 1
+            logger.debug(f"信号 {idx} 被过滤: 质量评分={quality_score} < {min_quality_score} 或无效（is_valid={is_valid}）")
             continue
         
         # 计算入场价格和 ATR
@@ -386,6 +409,8 @@ def apply_signal_filters(df, enhanced_signals,
         # 盈亏比检查
         if risk_reward_ratio < min_risk_reward:
             skipped_count += 1
+            skip_reasons_count['盈亏比不足'] += 1
+            logger.debug(f"信号 {idx} 被过滤: 盈亏比={risk_reward_ratio:.2f} < {min_risk_reward}")
             continue
         
         # ========== 强制过滤器 ==========
@@ -484,6 +509,7 @@ def apply_signal_filters(df, enhanced_signals,
         if filter_failed_reasons:
             logger.debug(f"信号 {idx} 被强制过滤器拒绝: {', '.join(filter_failed_reasons)}")
             skipped_count += 1
+            skip_reasons_count['强制过滤器失败'] += 1
             continue
         
         # ========== 所有过滤器通过 ==========
@@ -500,6 +526,17 @@ def apply_signal_filters(df, enhanced_signals,
         filtered_signals.append(filtered_item)
     
     logger.info(f"信号过滤完成: {len(enhanced_signals)} -> {len(filtered_signals)} (跳过 {skipped_count} 个)")
+    
+    # 输出详细的过滤统计
+    if skipped_count > 0:
+        logger.info("=" * 60)
+        logger.info("📊 信号过滤统计详情：")
+        logger.info("=" * 60)
+        for reason, count in skip_reasons_count.items():
+            if count > 0:
+                percentage = (count / len(enhanced_signals)) * 100
+                logger.info(f"  {reason}: {count} 个 ({percentage:.1f}%)")
+        logger.info("=" * 60)
     
     return filtered_signals
 
