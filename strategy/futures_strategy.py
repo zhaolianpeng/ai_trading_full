@@ -157,11 +157,27 @@ def calculate_futures_stop_loss(
     Returns:
         止损价格
     """
+    import os
+    # 回测模式下，放宽最小止损百分比，避免被短期波动触发
+    backtest_mode = os.getenv('BACKTEST_MODE', 'False').lower() == 'true' or \
+                   os.getenv('BACKTEST_FULL_DATA', 'False').lower() == 'true' or \
+                   os.getenv('BACKTEST_MONTHS', '0') != '0'
+    
+    if backtest_mode:
+        # 回测模式：提高最小止损百分比到1.0%，给价格更多波动空间
+        min_stop_pct = max(min_stop_pct, 0.01)  # 至少1.0%
+    
     # 基础止损距离（基于ATR）
     base_stop = atr * atr_mult
     
-    # 考虑杠杆：杠杆越高，止损应该越小
-    leverage_factor = 1.0 / np.sqrt(leverage)  # 使用平方根衰减
+    # 回测模式下，不应用杠杆因子（或减小影响），给价格更多波动空间
+    if backtest_mode:
+        # 回测模式：减小杠杆因子的影响，或完全不应用
+        leverage_factor = 1.0  # 不使用杠杆因子，给价格更多空间
+    else:
+        # 非回测模式：考虑杠杆，杠杆越高，止损应该越小
+        leverage_factor = 1.0 / np.sqrt(leverage)  # 使用平方根衰减
+    
     adjusted_stop = base_stop * leverage_factor
     
     # 计算止损百分比

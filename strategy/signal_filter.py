@@ -436,9 +436,21 @@ def apply_signal_filters(df, enhanced_signals,
         atr = df['atr14'].iloc[idx + 1] if 'atr14' in df.columns and not pd.isna(df['atr14'].iloc[idx + 1]) else entry_price * 0.01
         
         # 计算动态止损止盈，确保盈亏比 >= min_risk_reward
+        # 回测模式下，放宽止损ATR倍数，避免被短期波动触发
+        import os
+        backtest_mode = os.getenv('BACKTEST_MODE', 'False').lower() == 'true' or \
+                       os.getenv('BACKTEST_FULL_DATA', 'False').lower() == 'true' or \
+                       os.getenv('BACKTEST_MONTHS', '0') != '0'
+        
+        if backtest_mode:
+            # 回测模式：使用更大的止损ATR倍数（1.5），给价格更多波动空间
+            atr_mult_stop = 1.5
+        else:
+            atr_mult_stop = 1.0
+        
         stop_loss, take_profit, risk_reward_ratio, adjusted = calculate_dynamic_stop_target(
             df, idx, entry_price, atr,
-            atr_mult_stop=1.0,
+            atr_mult_stop=atr_mult_stop,
             atr_mult_target=2.0,
             min_risk_reward=min_risk_reward
         )

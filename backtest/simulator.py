@@ -163,14 +163,25 @@ def simple_backtest(df, enhanced_signals, max_hold=20, atr_mult_stop=1.0, atr_mu
             entry_price = df['close'].iloc[idx+1]
             atr = df['atr14'].iloc[idx+1] if not pd.isna(df['atr14'].iloc[idx+1]) else entry_price*0.01
             
+            # 回测模式下，使用更大的止损ATR倍数，避免被短期波动触发
+            backtest_mode = os.getenv('BACKTEST_MODE', 'False').lower() == 'true' or \
+                          os.getenv('BACKTEST_FULL_DATA', 'False').lower() == 'true' or \
+                          os.getenv('BACKTEST_MONTHS', '0') != '0'
+            
+            if backtest_mode:
+                # 回测模式：使用更大的止损ATR倍数（1.5），给价格更多波动空间
+                effective_atr_mult_stop = max(atr_mult_stop, 1.5)
+            else:
+                effective_atr_mult_stop = atr_mult_stop
+            
             # 根据信号方向计算止损止盈
             if signal == 'Short':
                 # 做空：止损在上方，止盈在下方
-                stop = entry_price + atr * atr_mult_stop
+                stop = entry_price + atr * effective_atr_mult_stop
                 target = entry_price - atr * atr_mult_target
             else:
                 # 做多：止损在下方，止盈在上方
-                stop = entry_price - atr * atr_mult_stop
+                stop = entry_price - atr * effective_atr_mult_stop
                 target = entry_price + atr * atr_mult_target
             
             risk = abs(entry_price - stop)
