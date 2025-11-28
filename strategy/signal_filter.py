@@ -264,13 +264,13 @@ def filter_signal_quality(df, idx, signal_data, min_confirmations=2):
             pass
     
     # 判断是否有效（至少需要 min_confirmations 个确认）
-    # 回测模式下，大幅降低质量评分要求以产生更多交易
+    # 回测模式下，适度降低质量评分要求，但仍保持一定质量标准以提升胜率
     confirmations = len(reasons)
     import os
     backtest_mode = os.getenv('BACKTEST_MODE', 'False').lower() == 'true' or \
                    os.getenv('BACKTEST_FULL_DATA', 'False').lower() == 'true' or \
                    os.getenv('BACKTEST_MONTHS', '0') != '0'
-    min_score_threshold = 15 if backtest_mode else 50  # 回测模式降低到15（从30）
+    min_score_threshold = 25 if backtest_mode else 50  # 回测模式提高到25（从15），提升胜率
     is_valid = confirmations >= min_confirmations and score >= min_score_threshold
     
     return is_valid, score, reasons
@@ -375,11 +375,11 @@ def apply_signal_filters(df, enhanced_signals,
             llm_score = 0
         
         # 结构置信度检查（如果使用LLM）
-        # 回测模式下，大幅降低结构置信度要求
+        # 回测模式下，适度降低结构置信度要求，但仍保持一定标准以提升胜率
         backtest_mode = os.getenv('BACKTEST_MODE', 'False').lower() == 'true' or \
                        os.getenv('BACKTEST_FULL_DATA', 'False').lower() == 'true' or \
                        os.getenv('BACKTEST_MONTHS', '0') != '0'
-        effective_threshold = 10 if backtest_mode else structure_confidence_threshold  # 回测模式降低到10
+        effective_threshold = 25 if backtest_mode else structure_confidence_threshold  # 回测模式提高到25（从10），提升胜率
         if llm_score < effective_threshold:
             skipped_count += 1
             skip_reasons_count['LLM评分不足（结构置信度）'] += 1
