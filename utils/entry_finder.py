@@ -16,7 +16,8 @@ def find_best_entry_point_3m(
     signal_time: datetime,
     signal_price: float,
     signal_direction: str = 'Long',
-    lookforward_minutes: int = 60
+    lookforward_minutes: int = 60,
+    max_time_window_hours: int = 8
 ) -> Optional[Dict]:
     """
     在短周期（5分钟或3分钟）中找到最佳入场点
@@ -27,7 +28,8 @@ def find_best_entry_point_3m(
         signal_time: 信号产生的时间（小时级）
         signal_price: 信号产生时的价格
         signal_direction: 信号方向 ('Long' 或 'Short')
-        lookforward_minutes: 向前查找的分钟数（默认60分钟，即12个5分钟K线或20个3分钟K线）
+        lookforward_minutes: 向前查找的分钟数（默认60分钟，已废弃，使用max_time_window_hours）
+        max_time_window_hours: 最大时间窗口（小时），在信号时间前后查找（默认8小时）
     
     Returns:
         包含最佳入场点信息的字典，如果找不到则返回None
@@ -39,11 +41,14 @@ def find_best_entry_point_3m(
         }
     """
     try:
-        # 计算时间范围：从信号时间开始，向前查找（未来）
-        start_time = signal_time
-        end_time = signal_time + timedelta(minutes=lookforward_minutes)
+        # 计算时间范围：在信号时间前后max_time_window_hours小时内查找
+        # 例如：信号时间是10:00，则在02:00到18:00之间查找（前后8小时）
+        time_window_minutes = max_time_window_hours * 60
+        start_time = signal_time - timedelta(hours=max_time_window_hours)
+        end_time = signal_time + timedelta(hours=max_time_window_hours)
         
-        logger.info(f"查找短周期入场点: 信号时间={signal_time}, 方向={signal_direction}, 向前查找{lookforward_minutes}分钟")
+        logger.info(f"查找短周期入场点: 信号时间={signal_time}, 方向={signal_direction}, "
+                   f"时间窗口=±{max_time_window_hours}小时（{start_time} 到 {end_time}）")
         
         # 根据数据源获取短周期数据（优先使用5分钟，因为更通用）
         # 注意：虽然函数名叫3m，但实际使用5m数据，因为Binance的3m在某些市场可能不稳定
@@ -144,14 +149,21 @@ def find_best_entry_point_3m(
             logger.warning(f"无法找到信号时间对应的K线 (signal_idx={signal_idx}, df_len={len(df_3m)})")
             return None
         
-        # 从信号时间之后（未来）查找最佳入场点
+        # 在信号时间前后max_time_window_hours小时内查找最佳入场点
         best_entry = None
         best_score = -float('inf')
         
-        # 查找范围：从信号时间开始，向后查找最多20个K线（约1小时）
-        search_range = min(len(df_3m) - signal_idx, 20)
+        # 计算查找范围：在信号时间前后max_time_window_hours小时内
+        # 对于5分钟K线，8小时 = 96个K线，前后各96个，总共最多192个K线
+        # 但为了效率，限制在合理范围内
+        max_k_bars = max_time_window_hours * 12  # 5分钟K线，8小时=96个
+        search_start_idx = max(0, signal_idx - max_k_bars)
+        search_end_idx = min(len(df_3m), signal_idx + max_k_bars)
         
-        for i in range(signal_idx, min(len(df_3m), signal_idx + search_range)):
+        logger.debug(f"查找范围: 索引 {search_start_idx} 到 {search_end_idx} "
+                   f"(信号索引: {signal_idx}, 时间窗口: ±{max_time_window_hours}小时)")
+        
+        for i in range(search_start_idx, search_end_idx):
             if i >= len(df_3m):
                 continue
             
@@ -261,19 +273,34 @@ def find_best_entry_point_3m(
                         score -= 10
                         reasons.append(f"成交量萎缩{vol_ratio:.2f}x")
                 
-                time_diff = (entry_time - signal_time).total_seconds() / 60
-                if 0 <= time_diff <= 15:
+                time_diff_minutes = (entry_time - signal_time).total_seconds() / 60  # 分钟
+                time_diff_hours = abs(time_diff_minutes) / 60  # 小时
+                
+                # 如果超过8小时，跳过这个K线
+                if time_diff_hours > max_time_window_hours:
+                    continue
+                
+                # 距离信号时间越近，评分越高（做空逻辑相同）
+                if abs(time_diff_minutes) <= 15:  # 0-15分钟，最佳
+                    score += 30
+                    reasons.append(f"距离信号{abs(time_diff_minutes):.0f}分钟")
+                elif abs(time_diff_minutes) <= 30:  # 15-30分钟
+                    score += 25
+                    reasons.append(f"距离信号{abs(time_diff_minutes):.0f}分钟")
+                elif abs(time_diff_minutes) <= 60:  # 30-60分钟
                     score += 20
-                    reasons.append(f"距离信号{time_diff:.0f}分钟")
-                elif 15 < time_diff <= 30:
+                    reasons.append(f"距离信号{abs(time_diff_minutes):.0f}分钟")
+                elif abs(time_diff_minutes) <= 120:  # 1-2小时
                     score += 15
-                    reasons.append(f"距离信号{time_diff:.0f}分钟")
-                elif 30 < time_diff <= 45:
+                    reasons.append(f"距离信号{time_diff_hours:.1f}小时")
+                elif abs(time_diff_minutes) <= 240:  # 2-4小时
                     score += 10
-                    reasons.append(f"距离信号{time_diff:.0f}分钟")
-                else:
-                    score -= 5
-                    reasons.append(f"距离信号{time_diff:.0f}分钟")
+                    reasons.append(f"距离信号{time_diff_hours:.1f}小时")
+                elif abs(time_diff_minutes) <= 480:  # 4-8小时
+                    score += 5
+                    reasons.append(f"距离信号{time_diff_hours:.1f}小时")
+                else:  # 超过8小时（不应该到这里，但保险起见）
+                    continue
                 
                 if row['close'] < row['open']:  # 阴线
                     score += 10
