@@ -301,7 +301,17 @@ def apply_signal_filters(df, enhanced_signals,
     """
     if allowed_structure_labels is None:
         # 默认只允许做多信号的结构标签（参考 ai_quant_strategy.py）
-        allowed_structure_labels = ["TREND_UP", "BREAKOUT_UP", "REVERSAL_UP"]
+        # 回测模式下，放宽结构标签限制，允许更多信号通过
+        backtest_mode = os.getenv('BACKTEST_MODE', 'False').lower() == 'true' or \
+                       os.getenv('BACKTEST_FULL_DATA', 'False').lower() == 'true' or \
+                       os.getenv('BACKTEST_MONTHS', '0') != '0'
+        if backtest_mode:
+            # 回测模式：允许所有结构标签（包括None），以增加交易信号
+            allowed_structure_labels = ["TREND_UP", "BREAKOUT_UP", "REVERSAL_UP", "TREND_DOWN", "BREAKOUT_DOWN", "REVERSAL_DOWN", "RANGE", "HIGH_FREQ"]
+            logger.info("回测模式：放宽结构标签限制，允许更多信号通过")
+        else:
+            # 非回测模式：只允许做多信号的结构标签
+            allowed_structure_labels = ["TREND_UP", "BREAKOUT_UP", "REVERSAL_UP"]
     
     logger.info(f"应用信号过滤器（最小质量评分={min_quality_score}, 最小盈亏比={min_risk_reward}, 允许的结构标签={allowed_structure_labels}）...")
     
@@ -337,7 +347,19 @@ def apply_signal_filters(df, enhanced_signals,
             llm = get_value_safe(item, 'llm', {})
             structure_label = get_value_safe(llm, 'structure_label', None) or get_value_safe(llm, 'rule_structure_label', None)
         
-        if structure_label not in allowed_structure_labels:
+        # 回测模式下，如果结构标签为None，也允许通过（放宽限制）
+        if structure_label is None:
+            backtest_mode = os.getenv('BACKTEST_MODE', 'False').lower() == 'true' or \
+                           os.getenv('BACKTEST_FULL_DATA', 'False').lower() == 'true' or \
+                           os.getenv('BACKTEST_MONTHS', '0') != '0'
+            if not backtest_mode:
+                # 非回测模式：结构标签为None时，跳过
+                skipped_count += 1
+                skip_reasons_count['结构标签不符合'] += 1
+                logger.debug(f"信号 {idx} 被过滤: 结构标签为None（非回测模式）")
+                continue
+            # 回测模式：结构标签为None时，允许通过
+        elif structure_label not in allowed_structure_labels:
             skipped_count += 1
             skip_reasons_count['结构标签不符合'] += 1
             logger.debug(f"信号 {idx} 被过滤: 结构标签={structure_label}, 允许的标签={allowed_structure_labels}")
