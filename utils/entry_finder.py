@@ -108,19 +108,31 @@ def find_best_entry_point_3m(
             logger.warning("短周期数据为空，跳过入场点查找")
             return None
         
-        # 找到信号时间对应的K线
+        # 确保索引是时间类型
+        if not isinstance(df_3m.index, pd.DatetimeIndex):
+            df_3m.index = pd.to_datetime(df_3m.index)
+        
+        # 过滤数据：只保留在信号时间前后8小时内的数据
+        time_window = timedelta(hours=max_time_window_hours)
+        mask = (df_3m.index >= signal_time - time_window) & (df_3m.index <= signal_time + time_window)
+        df_3m_filtered = df_3m[mask].copy()
+        
+        if df_3m_filtered.empty:
+            logger.warning(f"在信号时间前后{max_time_window_hours}小时内没有找到短周期数据")
+            logger.warning(f"信号时间: {signal_time}, 查找范围: {signal_time - time_window} 到 {signal_time + time_window}")
+            logger.warning(f"数据时间范围: {df_3m.index.min()} 到 {df_3m.index.max()}")
+            return None
+        
+        logger.debug(f"过滤后数据: {len(df_3m_filtered)} 根K线（原始: {len(df_3m)} 根）")
+        logger.debug(f"过滤后时间范围: {df_3m_filtered.index.min()} 到 {df_3m_filtered.index.max()}")
+        
+        # 找到信号时间对应的K线（在过滤后的数据中）
         signal_idx = None
         try:
-            # 确保索引是时间类型
-            if not isinstance(df_3m.index, pd.DatetimeIndex):
-                # 尝试转换为 DatetimeIndex
-                df_3m.index = pd.to_datetime(df_3m.index)
-            
             # 计算时间差（转换为总秒数，便于比较）
-            time_diffs = abs(df_3m.index - signal_time)
+            time_diffs = abs(df_3m_filtered.index - signal_time)
             
             # 将时间差转换为数值（总秒数），然后使用 numpy 的 argmin
-            # 这样可以避免 TimedeltaIndex 没有 idxmin() 方法的问题
             if hasattr(time_diffs, 'total_seconds'):
                 # 如果是 TimedeltaIndex，转换为秒数
                 time_diffs_seconds = np.array([td.total_seconds() for td in time_diffs])
@@ -134,20 +146,30 @@ def find_best_entry_point_3m(
             # 使用 numpy 的 argmin 获取最小值的索引位置
             min_idx = np.argmin(time_diffs_seconds)
             
-            # 获取对应的索引位置
-            if 0 <= min_idx < len(df_3m):
+            # 获取对应的索引位置（在过滤后的DataFrame中）
+            if 0 <= min_idx < len(df_3m_filtered):
                 signal_idx = int(min_idx)
             else:
-                signal_idx = len(df_3m) - 1
+                signal_idx = len(df_3m_filtered) - 1
+                
+            # 验证找到的K线是否在8小时窗口内
+            if signal_idx < len(df_3m_filtered):
+                found_time = df_3m_filtered.index[signal_idx]
+                time_diff_hours = abs((found_time - signal_time).total_seconds() / 3600)
+                if time_diff_hours > max_time_window_hours:
+                    logger.warning(f"找到的K线距离信号时间{time_diff_hours:.1f}小时，超过{max_time_window_hours}小时窗口")
+                    return None
                 
         except Exception as e:
             logger.warning(f"查找信号时间对应的K线时出错: {e}")
-            # 使用最后一个索引作为备选
-            signal_idx = len(df_3m) - 1
-        
-        if signal_idx is None or signal_idx >= len(df_3m) or signal_idx < 0:
-            logger.warning(f"无法找到信号时间对应的K线 (signal_idx={signal_idx}, df_len={len(df_3m)})")
             return None
+        
+        if signal_idx is None or signal_idx >= len(df_3m_filtered) or signal_idx < 0:
+            logger.warning(f"无法找到信号时间对应的K线 (signal_idx={signal_idx}, df_len={len(df_3m_filtered)})")
+            return None
+        
+        # 使用过滤后的数据
+        df_3m = df_3m_filtered
         
         # 在信号时间前后max_time_window_hours小时内查找最佳入场点
         best_entry = None
