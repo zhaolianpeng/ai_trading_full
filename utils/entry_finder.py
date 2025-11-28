@@ -366,7 +366,8 @@ def find_best_entry_point_3m(
                     reasons.append("波动较大")
             
             # 更新最佳入场点
-            if score > best_score:
+            # 优化：只接受评分足够高的入场点，等待更好的入场时机
+            if score > best_score and score >= min_entry_score:
                 best_score = score
                 best_entry = {
                     'entry_time': entry_time,
@@ -377,13 +378,14 @@ def find_best_entry_point_3m(
                 }
         
         if best_entry:
-            logger.info(f"找到最佳入场点: 时间={best_entry['entry_time']}, "
+            logger.info(f"✅ 找到最佳入场点: 时间={best_entry['entry_time']}, "
                        f"价格={best_entry['entry_price']:.2f}, "
-                       f"评分={best_entry['entry_score']}, "
+                       f"评分={best_entry['entry_score']:.1f}, "
                        f"原因={best_entry['entry_reason']}")
             return best_entry
         else:
-            logger.warning("未找到合适的入场点")
+            logger.warning(f"❌ 未找到合适的入场点（在 {max_time_window_hours} 小时窗口内，最低评分要求={min_entry_score}）")
+            logger.info(f"💡 建议：等待更好的入场时机，或放宽入场评分要求")
             return None
             
     except Exception as e:
