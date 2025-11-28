@@ -44,11 +44,12 @@ ENV/
 !README.md
 !.env.example
 
-# Output files
+# Output files（统一放在 running 目录）
+running/
+*.log
 sample_data.csv
 trades.csv
 signals_log.json
 trading_chart.png
 backtest_results.png
 analysis_report.txt
-trading.log

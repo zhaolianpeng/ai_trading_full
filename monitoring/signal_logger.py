@@ -17,15 +17,20 @@ class SignalLogger:
     信号日志记录器
     """
     
-    def __init__(self, log_dir: str = 'logs'):
+    def __init__(self, log_dir: str = None):
         """
         初始化日志记录器
         
         Args:
-            log_dir: 日志目录
+            log_dir: 日志目录，如果为 None，则使用 OUTPUT_DIR 配置
         """
-        self.log_dir = Path(log_dir)
-        self.log_dir.mkdir(exist_ok=True)
+        # 如果没有指定日志目录，使用 OUTPUT_DIR 配置
+        if log_dir is None:
+            from config import OUTPUT_DIR
+            self.log_dir = Path(OUTPUT_DIR)
+        else:
+            self.log_dir = Path(log_dir)
+        self.log_dir.mkdir(parents=True, exist_ok=True)
         
         # 日志文件路径
         self.signals_log_path = self.log_dir / 'signals_detailed.json'

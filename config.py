@@ -77,7 +77,9 @@ FUTURES_USE_ENHANCED_STRATEGY = os.getenv('FUTURES_USE_ENHANCED_STRATEGY', 'True
 
 # ==================== 日志配置 ====================
 LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO')  # DEBUG, INFO, WARNING, ERROR
-LOG_FILE = os.getenv('LOG_FILE', 'trading.log')  # 日志文件路径，None 表示不写入文件
+# 默认日志文件路径：running/trading.log
+LOG_FILE = os.getenv('LOG_FILE', 'running/trading.log')  # 日志文件路径，None 表示不写入文件
 
 # ==================== 输出配置 ====================
-OUTPUT_DIR = os.getenv('OUTPUT_DIR', '.')  # 输出文件目录
+# 默认输出目录：running（所有执行结果文件统一放在此目录）
+OUTPUT_DIR = os.getenv('OUTPUT_DIR', 'running')  # 输出文件目录

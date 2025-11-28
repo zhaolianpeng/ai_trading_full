@@ -155,8 +155,14 @@ def plot_price_with_signals(df: pd.DataFrame, signals: List[Dict],
         plt.savefig(output_path, dpi=150, bbox_inches='tight')
         logger.info(f"Saved chart to {output_path}")
     else:
-        plt.savefig('trading_chart.png', dpi=150, bbox_inches='tight')
-        logger.info("Saved chart to trading_chart.png")
+        # 使用 OUTPUT_DIR 配置
+        from config import OUTPUT_DIR
+        from pathlib import Path
+        output_dir = Path(OUTPUT_DIR)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        chart_path = output_dir / 'trading_chart.png'
+        plt.savefig(chart_path, dpi=150, bbox_inches='tight')
+        logger.info(f"Saved chart to {chart_path}")
     
     plt.close()
 
@@ -221,8 +227,14 @@ def plot_backtest_results(trades_df: pd.DataFrame, output_path: Optional[str] = 
         plt.savefig(output_path, dpi=150, bbox_inches='tight')
         logger.info(f"Saved backtest chart to {output_path}")
     else:
-        plt.savefig('backtest_results.png', dpi=150, bbox_inches='tight')
-        logger.info("Saved backtest chart to backtest_results.png")
+        # 使用 OUTPUT_DIR 配置
+        from config import OUTPUT_DIR
+        from pathlib import Path
+        output_dir = Path(OUTPUT_DIR)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        chart_path = output_dir / 'backtest_results.png'
+        plt.savefig(chart_path, dpi=150, bbox_inches='tight')
+        logger.info(f"Saved backtest chart to {chart_path}")
     
     plt.close()
 
@@ -316,8 +328,14 @@ def generate_report(df: pd.DataFrame, signals: List[Dict],
             f.write(report_text)
         logger.info(f"Saved report to {output_path}")
     else:
-        with open('analysis_report.txt', 'w', encoding='utf-8') as f:
+        # 使用 OUTPUT_DIR 配置
+        from config import OUTPUT_DIR
+        from pathlib import Path
+        output_dir = Path(OUTPUT_DIR)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        report_path = output_dir / 'analysis_report.txt'
+        with open(report_path, 'w', encoding='utf-8') as f:
             f.write(report_text)
-        logger.info("Saved report to analysis_report.txt")
+        logger.info(f"Saved report to {report_path}")
     
     return report_text

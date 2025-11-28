@@ -42,12 +42,13 @@ def setup_logger(name: str = 'ai_trading', log_level: str = None, log_file: str 
     if log_file or LOG_FILE:
         try:
             file_path = Path(log_file or LOG_FILE)
-            # 尝试创建父目录（如果不存在）
-            try:
-                file_path.parent.mkdir(parents=True, exist_ok=True)
-            except (PermissionError, OSError) as e:
-                logger.warning(f"Cannot create log directory {file_path.parent}: {e}. Using console only.")
-                return logger
+            # 确保父目录存在（如果路径包含目录）
+            if file_path.parent != Path('.'):
+                try:
+                    file_path.parent.mkdir(parents=True, exist_ok=True)
+                except (PermissionError, OSError) as e:
+                    logger.warning(f"Cannot create log directory {file_path.parent}: {e}. Using console only.")
+                    return logger
             
             # 尝试创建文件处理器
             try:
