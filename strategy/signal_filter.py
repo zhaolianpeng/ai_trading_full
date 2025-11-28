@@ -463,6 +463,16 @@ def apply_signal_filters(df, enhanced_signals,
         else:
             filter_failed_reasons.append("ATR数据缺失")
         
+        # 1.5. 成交量放大过滤（强制要求）
+        # 要求成交量必须放大，确保有足够的市场参与度
+        volume_threshold = float(os.getenv('VOLUME_THRESHOLD', '1.2'))  # 默认要求成交量放大1.2倍
+        if 'vol_ma50' in df.columns and not pd.isna(row['vol_ma50']):
+            vol_ratio = row['volume'] / row['vol_ma50'] if row['vol_ma50'] > 0 else 0
+            if vol_ratio < volume_threshold:
+                filter_failed_reasons.append(f"成交量未放大（{vol_ratio:.2f}x < {volume_threshold}x，强制要求）")
+        else:
+            filter_failed_reasons.append("成交量数据缺失（强制要求）")
+        
         # 2. EMA 多头排列过滤（回测模式下大幅放宽或取消要求）
         if 'ema21' in df.columns and 'ema55' in df.columns and 'ema100' in df.columns:
             ema_bull = row['ema21'] > row['ema55'] > row['ema100']
