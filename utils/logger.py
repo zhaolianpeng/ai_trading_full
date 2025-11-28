@@ -1,6 +1,7 @@
 # utils/logger.py
 import logging
 import sys
+from datetime import datetime
 from pathlib import Path
 from config import LOG_LEVEL, LOG_FILE
 
@@ -50,9 +51,36 @@ def setup_logger(name: str = 'ai_trading', log_level: str = None, log_file: str 
                     logger.warning(f"Cannot create log directory {file_path.parent}: {e}. Using console only.")
                     return logger
             
-            # 尝试创建文件处理器
+            # 如果日志文件已存在，备份它
+            if file_path.exists() and file_path.stat().st_size > 0:
+                try:
+                    # 生成备份文件名：原文件名 + 时间戳 + .bak
+                    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                    backup_path = file_path.parent / f"{file_path.stem}_{timestamp}{file_path.suffix}.bak"
+                    
+                    # 如果备份文件已存在，尝试添加序号
+                    counter = 1
+                    original_backup_path = backup_path
+                    while backup_path.exists():
+                        backup_path = file_path.parent / f"{file_path.stem}_{timestamp}_{counter}{file_path.suffix}.bak"
+                        counter += 1
+                        if counter > 1000:  # 防止无限循环
+                            break
+                    
+                    # 重命名旧日志文件为备份文件
+                    file_path.rename(backup_path)
+                    # 使用 stderr 输出，因为此时 logger 可能还没有文件处理器
+                    sys.stderr.write(f"已备份旧日志文件: {backup_path}\n")
+                except (PermissionError, OSError) as e:
+                    # 如果备份失败，记录警告但继续使用新文件（覆盖旧文件）
+                    try:
+                        logger.warning(f"Cannot backup old log file {file_path}: {e}. Will overwrite.")
+                    except:
+                        sys.stderr.write(f"Warning: Cannot backup old log file {file_path}: {e}. Will overwrite.\n")
+            
+            # 尝试创建文件处理器（使用 'w' 模式，创建新文件）
             try:
-                file_handler = logging.FileHandler(file_path, encoding='utf-8')
+                file_handler = logging.FileHandler(file_path, mode='w', encoding='utf-8')
                 file_handler.setLevel(level)
                 file_handler.setFormatter(formatter)
                 logger.addHandler(file_handler)
