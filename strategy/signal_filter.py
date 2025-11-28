@@ -263,12 +263,12 @@ def filter_signal_quality(df, idx, signal_data, min_confirmations=2):
             pass
     
     # 判断是否有效（至少需要 min_confirmations 个确认）
-    # 回测模式下，适度降低质量评分要求，但仍保持一定质量标准以提升胜率
+    # 回测模式下，提高质量评分要求，只接受高质量信号以提升胜率
     confirmations = len(reasons)
     backtest_mode = os.getenv('BACKTEST_MODE', 'False').lower() == 'true' or \
                    os.getenv('BACKTEST_FULL_DATA', 'False').lower() == 'true' or \
                    os.getenv('BACKTEST_MONTHS', '0') != '0'
-    min_score_threshold = 30 if backtest_mode else 50  # 回测模式提高到30（从25），进一步提升胜率
+    min_score_threshold = 40 if backtest_mode else 50  # 回测模式提高到40（从30），只接受高质量信号
     is_valid = confirmations >= min_confirmations and score >= min_score_threshold
     
     return is_valid, score, reasons
@@ -424,8 +424,9 @@ def apply_signal_filters(df, enhanced_signals,
                        os.getenv('BACKTEST_MONTHS', '0') != '0'
         
         if backtest_mode:
-            # 回测模式：使用更大的止损ATR倍数（1.5），给价格更多波动空间
-            atr_mult_stop = 1.5
+            # 回测模式：使用更大的止损ATR倍数（2.0），给价格更多波动空间，减少持仓0周期止损
+            # 根据数据分析：54个交易在持仓0周期就止损，需要进一步放宽止损
+            atr_mult_stop = 2.0  # 从1.5提高到2.0，给价格更多波动空间
         else:
             atr_mult_stop = 1.0
         

@@ -164,8 +164,9 @@ def calculate_futures_stop_loss(
                    os.getenv('BACKTEST_MONTHS', '0') != '0'
     
     if backtest_mode:
-        # 回测模式：提高最小止损百分比到1.0%，给价格更多波动空间
-        min_stop_pct = max(min_stop_pct, 0.01)  # 至少1.0%
+        # 回测模式：提高最小止损百分比到1.5%，给价格更多波动空间，减少持仓0周期止损
+        # 根据数据分析：54个交易在持仓0周期就止损，需要进一步放宽止损
+        min_stop_pct = max(min_stop_pct, 0.015)  # 至少1.5%（从1.0%提高）
     
     # 基础止损距离（基于ATR）
     base_stop = atr * atr_mult

@@ -584,16 +584,15 @@ def main() -> int:
             
             # 回测模式下，平衡交易数量和胜率
             if backtest_mode:
-                logger.info("回测模式：优化过滤阈值和止损策略以提升胜率（目标：胜率>35%，交易数量>50）")
-                # 适度降低阈值以增加交易数量，同时优化止损策略
-                # 根据数据分析：LLM>=50的胜率31.71%，但交易数量太少
-                # 策略：适度降低LLM阈值，但优化止损避免被短期波动触发
-                min_quality = int(os.getenv('MIN_QUALITY_SCORE', '25'))  # 降低到25（从30），增加交易数量
-                min_conf = int(os.getenv('MIN_CONFIRMATIONS', '1'))  # 保持1
+                logger.info("回测模式：大幅提高过滤阈值以提升胜率（目标：胜率>40%，减少持仓0周期止损）")
+                # 根据数据分析：54个交易在持仓0周期就止损（胜率0%），持仓1周期胜率75%
+                # 策略：大幅提高过滤标准，只接受高质量信号，减少立即止损的交易
+                min_quality = int(os.getenv('MIN_QUALITY_SCORE', '40'))  # 提高到40（从25），只接受高质量信号
+                min_conf = int(os.getenv('MIN_CONFIRMATIONS', '2'))  # 提高到2（从1），需要更多确认
                 min_rr = float(os.getenv('MIN_RISK_REWARD', '1.5'))  # 保持1.5（用户要求）
-                min_llm = int(os.getenv('MIN_LLM_SCORE', '40'))  # 降低到40（从45），增加交易数量
+                min_llm = int(os.getenv('MIN_LLM_SCORE', '60'))  # 提高到60（从40），只接受高质量LLM信号
                 logger.info(f"回测模式过滤阈值: 质量评分>={min_quality}, 确认数>={min_conf}, 盈亏比>={min_rr}, LLM评分>={min_llm}")
-                logger.info("注意：接受做多（Long）和做空（Short）信号，使用收盘价确认止损，避免被短期波动触发")
+                logger.info("注意：大幅提高过滤标准，减少持仓0周期止损，提升胜率")
             else:
                 # 使用交易模式配置的参数，但允许环境变量覆盖
                 min_quality = int(os.getenv('MIN_QUALITY_SCORE', mode_config['min_quality_score']))

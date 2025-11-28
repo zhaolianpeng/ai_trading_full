@@ -169,8 +169,9 @@ def simple_backtest(df, enhanced_signals, max_hold=20, atr_mult_stop=1.0, atr_mu
                           os.getenv('BACKTEST_MONTHS', '0') != '0'
             
             if backtest_mode:
-                # 回测模式：使用更大的止损ATR倍数（1.5），给价格更多波动空间
-                effective_atr_mult_stop = max(atr_mult_stop, 1.5)
+                # 回测模式：使用更大的止损ATR倍数（2.0），给价格更多波动空间，减少持仓0周期止损
+                # 根据数据分析：54个交易在持仓0周期就止损，需要进一步放宽止损
+                effective_atr_mult_stop = max(atr_mult_stop, 2.0)  # 从1.5提高到2.0
             else:
                 effective_atr_mult_stop = atr_mult_stop
             
